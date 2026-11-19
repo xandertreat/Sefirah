@@ -391,8 +391,10 @@
                             Height="48"
                             CornerRadius="24"
                             HorizontalAlignment="Center"
+                            Background="#2E9E57"
+                            BorderBrush="#2E9E57"
                             IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
-                            <FontIcon Glyph="&#xE717;" FontSize="20"/>
+                            <FontIcon Glyph="&#xE717;" FontSize="20" Foreground="White"/>
                         </Button>
                         <RepeatButton
                             Grid.Column="2"
@@ -402,7 +404,7 @@
                             HorizontalAlignment="Center"
                             Delay="400"
                             Click="RepeatBackspaceButton_Click"
-                            IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
+                            Visibility="{x:Bind ViewModel.HasPhoneNumber, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <FontIcon Glyph="&#xE94F;" FontSize="16"/>
                         </RepeatButton>
                     </Grid>
