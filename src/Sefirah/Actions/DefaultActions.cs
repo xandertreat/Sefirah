@@ -19,7 +19,7 @@ public static class DefaultActions
 
     public static List<ActionItem> Create()
     {
-        List<ActionItem> items = [with(kinds.Length)];
+        List<ActionItem> items = new(kinds.Length);
 
         foreach (var kind in kinds)
         {

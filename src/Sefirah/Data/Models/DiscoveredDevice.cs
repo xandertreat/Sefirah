@@ -22,7 +22,10 @@ public partial class DiscoveredDevice : BaseRemoteDevice
             Session = Session,
             Client = Client,
             Address = Address,
-            Addresses = [with([new AddressEntry { Address = Address, IsEnabled = true }])],
+            Addresses =
+            [
+                new AddressEntry { Address = Address, IsEnabled = true }
+            ],
             ConnectionStatus = new Connected(),
             Port = Port,
         };
