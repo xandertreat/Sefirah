@@ -188,10 +188,16 @@ public sealed partial class CallsPage : Page
 
     private void CallLogs_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is CallLog callLog)
+        if (e.ClickedItem is not CallLog callLog)
         {
-            ViewModel.ToggleSelectingCallLog(callLog);
+            return;
         }
+
+        ViewModel.ToggleSelectingCallLog(callLog);
+
+        // Same as picking a contact in the search box: fill the dialer with it.
+        ViewModel.ApplySearchQueryAsNumber(callLog.CallContact.Address);
+        ShowDialer();
     }
 
     private async void CallLogItemCallButton_Click(object sender, RoutedEventArgs e)
