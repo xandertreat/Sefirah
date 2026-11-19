@@ -195,8 +195,9 @@ public sealed partial class CallsPage : Page
 
         ViewModel.ToggleSelectingCallLog(callLog);
 
-        // Same as picking a contact in the search box: fill the dialer with it.
-        ViewModel.ApplySearchQueryAsNumber(callLog.CallContact.Address);
+        // Same as picking a contact in the search box: fill the dialer with the row's own contact,
+        // so the name and picture match the list instead of whatever a number lookup finds.
+        ViewModel.ApplyContactToDialer(callLog.CallContact);
         ShowDialer();
     }
 

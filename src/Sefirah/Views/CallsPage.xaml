@@ -324,7 +324,6 @@
                         <controls:ContactAvatar
                             Width="68"
                             Height="68"
-                            UseThemePlaceholder="True"
                             Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}"
                             ImageProvider="{x:Bind ViewModel.DialContact.AvatarStream, Mode=OneWay}"
                             Initials="{x:Bind ViewModel.DialContact.Initials, Mode=OneWay}"
