@@ -1,3 +1,4 @@
+using Sefirah.Platforms.Desktop.Dbus;
 using Tmds.DBus.Protocol;
 
 namespace Sefirah.Platforms.Desktop.Calling;
@@ -36,12 +37,12 @@ internal sealed class TelephonyClient : IDisposable
 
             snapshot.ServiceAvailable = true;
 
-            var objects = await QueryManagedObjectsAsync(session, ServiceName, ManagerPath, cancellationToken);
+            var objects = await ManagedObjectReader.QueryAsync(session, ServiceName, ManagerPath, cancellationToken);
             foreach (var (path, interfaces) in objects)
             {
                 if (interfaces.TryGetValue(GatewayInterface, out var gatewayProps))
                 {
-                    snapshot.Gateways.Add(new TelephonyGateway(path, Describe(gatewayProps, "Alias", "Name")));
+                    snapshot.Gateways.Add(new TelephonyGateway(path, ManagedObjectReader.Describe(gatewayProps, "Alias", "Name")));
                     continue;
                 }
 
@@ -51,10 +52,10 @@ internal sealed class TelephonyClient : IDisposable
                 snapshot.Calls.Add(new TelephonyCallState(
                     path,
                     path[..path.LastIndexOf('/')],
-                    String(callProps, "State"),
-                    String(callProps, "LineIdentification"),
-                    String(callProps, "Name"),
-                    Int(callProps, "MicrophoneVolume")));
+                    ManagedObjectReader.String(callProps, "State"),
+                    ManagedObjectReader.String(callProps, "LineIdentification"),
+                    ManagedObjectReader.String(callProps, "Name"),
+                    ManagedObjectReader.Int(callProps, "MicrophoneVolume")));
             }
         }
         catch (DBusErrorReplyException ex) when (ex.ErrorName is "org.freedesktop.DBus.Error.ServiceUnknown" or "org.freedesktop.DBus.Error.NameHasNoOwner")
@@ -67,19 +68,19 @@ internal sealed class TelephonyClient : IDisposable
             system ??= await ConnectAsync(DBusAddress.System);
             if (system is not null)
             {
-                var objects = await QueryManagedObjectsAsync(system, "org.bluez", "/", cancellationToken);
+                var objects = await ManagedObjectReader.QueryAsync(system, "org.bluez", "/", cancellationToken);
                 foreach (var (_, interfaces) in objects)
                 {
                     if (interfaces.TryGetValue("org.bluez.Adapter1", out var adapterProps))
                     {
                         snapshot.AdapterPresent = true;
-                        snapshot.AdapterPowered = Bool(adapterProps, "Powered");
+                        snapshot.AdapterPowered = ManagedObjectReader.Bool(adapterProps, "Powered");
                     }
                     else if (interfaces.TryGetValue("org.bluez.Device1", out var deviceProps) &&
-                             (Bool(deviceProps, "Paired") || Bool(deviceProps, "Trusted")))
+                             (ManagedObjectReader.Bool(deviceProps, "Paired") || ManagedObjectReader.Bool(deviceProps, "Trusted")))
                     {
                         snapshot.HasPairedPhone = true;
-                        snapshot.PhoneAddress = String(deviceProps, "Address");
+                        snapshot.PhoneAddress = ManagedObjectReader.String(deviceProps, "Address");
                     }
                 }
             }
@@ -138,81 +139,6 @@ internal sealed class TelephonyClient : IDisposable
         return connection;
     }
 
-    private static async Task<ManagedObjects> QueryManagedObjectsAsync(
-        DBusConnection connection, string destination, string path, CancellationToken cancellationToken)
-    {
-        var writer = connection.GetMessageWriter();
-        writer.WriteMethodCallHeader(destination, path, ObjectManagerInterface, "GetManagedObjects", "");
-
-        return await connection.CallMethodAsync(writer.CreateMessage(), ReadManagedObjects, null)
-            .WaitAsync(CallTimeout, cancellationToken);
-    }
-
-    private static ManagedObjects ReadManagedObjects(Message message, object? state)
-    {
-        var reader = message.GetBodyReader();
-        var objects = new ManagedObjects(StringComparer.Ordinal);
-
-        var objectsEnd = reader.ReadArrayStart(DBusType.DictEntry);
-        while (reader.HasNext(objectsEnd))
-        {
-            reader.AlignStruct();
-            var path = reader.ReadObjectPathAsString();
-
-            var interfaces = new ManagedObjectInterfaces(StringComparer.Ordinal);
-            var interfacesEnd = reader.ReadArrayStart(DBusType.DictEntry);
-            while (reader.HasNext(interfacesEnd))
-            {
-                reader.AlignStruct();
-                var name = reader.ReadString();
-                interfaces[name] = reader.ReadDictionaryOfStringToVariantValue();
-            }
-
-            objects[path] = interfaces;
-        }
-
-        return objects;
-    }
-
-    private static string String(Dictionary<string, VariantValue> props, string key) =>
-        props.TryGetValue(key, out var value)
-            ? value.Type switch
-            {
-                VariantValueType.String => value.GetString(),
-                VariantValueType.ObjectPath => value.GetObjectPathAsString(),
-                _ => string.Empty,
-            }
-            : string.Empty;
-
-    private static int Int(Dictionary<string, VariantValue> props, string key) =>
-        props.TryGetValue(key, out var value)
-            ? value.Type switch
-            {
-                VariantValueType.Int32 => value.GetInt32(),
-                VariantValueType.UInt32 => (int)value.GetUInt32(),
-                VariantValueType.Int16 => value.GetInt16(),
-                VariantValueType.UInt16 => value.GetUInt16(),
-                VariantValueType.Int64 => (int)value.GetInt64(),
-                VariantValueType.Byte => value.GetByte(),
-                _ => 0,
-            }
-            : 0;
-
-    private static bool Bool(Dictionary<string, VariantValue> props, string key) =>
-        props.TryGetValue(key, out var value) && value.Type == VariantValueType.Bool && value.GetBool();
-
-    private static string Describe(Dictionary<string, VariantValue> props, params string[] keys)
-    {
-        foreach (var key in keys)
-        {
-            var value = String(props, key);
-            if (!string.IsNullOrWhiteSpace(value))
-                return value;
-        }
-
-        return string.Empty;
-    }
-
     public void Dispose()
     {
         session?.Dispose();
@@ -237,12 +163,6 @@ internal sealed class TelephonySnapshot
 
     public List<TelephonyCallState> Calls { get; } = [];
 }
-
-internal sealed class ManagedObjectInterfaces(StringComparer comparer)
-    : Dictionary<string, Dictionary<string, VariantValue>>(comparer);
-
-internal sealed class ManagedObjects(StringComparer comparer)
-    : Dictionary<string, ManagedObjectInterfaces>(comparer);
 
 internal sealed record TelephonyGateway(string Path, string Alias);
 

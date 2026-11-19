@@ -297,6 +297,7 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     private async Task BeginPairBluetoothAsync()
     {
         var root = App.MainWindow.Content?.XamlRoot;
+        Logger.Info($"Pair device clicked (device: {ActiveDevice?.Name ?? "none"}, root: {root is not null}).");
         if (root is null || ActiveDevice is null) return;
 
         if (!bluetoothPairingService.IsBluetoothRadioOn && !await bluetoothPairingService.TryEnableBluetoothAsync())
@@ -305,8 +306,15 @@ public sealed partial class CallsPageViewModel : BaseViewModel
             return;
         }
 
-        var setupDialog = new BluetoothSetupDialog(ActiveDevice) { XamlRoot = root };
-        await setupDialog.ShowAsync();
+        try
+        {
+            var setupDialog = new BluetoothSetupDialog(ActiveDevice) { XamlRoot = root };
+            await setupDialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Bluetooth setup dialog could not be opened", ex);
+        }
     }
 
 }
