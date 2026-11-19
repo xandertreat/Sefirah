@@ -1,6 +1,7 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Input;
 using Sefirah.Data.Models;
+using Sefirah.Platforms.Desktop.Services;
 using Sefirah.ViewModels;
 using Windows.System;
 using Windows.UI.Core;
@@ -199,6 +200,7 @@ public sealed partial class CallsPage : Page
             return;
         }
 
+        DialTonePlayer.Play('0');
         ViewModel.PhoneNumber += "0";
     }
 
@@ -207,6 +209,7 @@ public sealed partial class CallsPage : Page
         if (e.HoldingState is HoldingState.Completed)
         {
             suppressZeroClick = true;
+            DialTonePlayer.Play('0');
             ViewModel.PhoneNumber += "+";
             e.Handled = true;
         }
@@ -215,6 +218,7 @@ public sealed partial class CallsPage : Page
     private void DialZeroButton_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         suppressZeroClick = true;
+        DialTonePlayer.Play('0');
         ViewModel.PhoneNumber += "+";
         e.Handled = true;
     }
