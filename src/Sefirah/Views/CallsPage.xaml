@@ -374,9 +374,6 @@
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-
-                        <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource DialPadKeyStyle}" Content="1"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="1"/>
                     </Grid>
 
                     <!-- Keys are generated in code-behind so each one can carry its letters and hold menu. -->

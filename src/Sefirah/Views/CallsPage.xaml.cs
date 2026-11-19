@@ -250,7 +250,7 @@ public sealed partial class CallsPage : Page
     private void HookCharacterHold(Button button, string key, string? characters)
     {
         var held = false;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();
@@ -264,8 +264,8 @@ public sealed partial class CallsPage : Page
             timer.Start();
         };
         button.PointerReleased += (_, _) => timer.Stop();
-        button.PointerExited += (_, _) => timer.Stop();
         button.PointerCanceled += (_, _) => timer.Stop();
+        button.PointerCaptureLost += (_, _) => timer.Stop();
         button.Click += (_, _) =>
         {
             if (held)
@@ -341,9 +341,18 @@ public sealed partial class CallsPage : Page
             VerticalOffset = Math.Max(8, origin.Y - card.DesiredSize.Height - 10),
         };
         characterPopup.Closed += (_, _) => characterPopup = null;
+
+        // Start collapsed so the first frame cannot paint the finished card (that read as a stutter).
+        card.Opacity = 0;
+        if (card.RenderTransform is CompositeTransform initial)
+        {
+            initial.ScaleX = 0.82;
+            initial.ScaleY = 0.82;
+        }
+
         characterPopup.IsOpen = true;
 
-        AnimateCharacters(card, 0.82, 1, 180);
+        AnimateCharacters(card, from: 0.82, to: 1, opacity: 1, milliseconds: 150);
     }
 
     private void HideCharacters(bool animate)
@@ -358,18 +367,18 @@ public sealed partial class CallsPage : Page
             return;
         }
 
-        AnimateCharacters(card, 0.9, 0, 120, () => popup.IsOpen = false);
+        AnimateCharacters(card, from: 1, to: 0.55, opacity: 0, milliseconds: 70, () => popup.IsOpen = false);
     }
 
-    private static void AnimateCharacters(Border card, double scale, double opacity, int milliseconds, Action? completed = null)
+    private static void AnimateCharacters(Border card, double from, double to, double opacity, int milliseconds, Action? completed = null)
     {
         var storyboard = new Storyboard();
         if (card.RenderTransform is CompositeTransform transform)
         {
-            storyboard.Children.Add(CharacterAnimation(transform, "ScaleX", scale, milliseconds));
-            storyboard.Children.Add(CharacterAnimation(transform, "ScaleY", scale, milliseconds));
+            storyboard.Children.Add(CharacterAnimation(transform, "ScaleX", from, to, milliseconds));
+            storyboard.Children.Add(CharacterAnimation(transform, "ScaleY", from, to, milliseconds));
         }
-        storyboard.Children.Add(CharacterAnimation(card, "Opacity", opacity, milliseconds));
+        storyboard.Children.Add(CharacterAnimation(card, "Opacity", card.Opacity, opacity, milliseconds));
 
         if (completed is not null)
             storyboard.Completed += (_, _) => completed();
@@ -384,17 +393,18 @@ public sealed partial class CallsPage : Page
             card.Opacity = opacity;
             if (card.RenderTransform is CompositeTransform final)
             {
-                final.ScaleX = scale;
-                final.ScaleY = scale;
+                final.ScaleX = to;
+                final.ScaleY = to;
             }
             completed?.Invoke();
         }
     }
 
-    private static DoubleAnimation CharacterAnimation(DependencyObject target, string property, double to, int milliseconds)
+    private static DoubleAnimation CharacterAnimation(DependencyObject target, string property, double from, double to, int milliseconds)
     {
         var animation = new DoubleAnimation
         {
+            From = from,
             To = to,
             Duration = new Duration(TimeSpan.FromMilliseconds(milliseconds)),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
