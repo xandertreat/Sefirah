@@ -39,6 +39,8 @@ public sealed partial class CallsPage : Page
         {
             UpdatePaneLayout();
             HookWindowKeys(true);
+            if (XamlRoot?.Content is UIElement rootContent)
+                rootContent.AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
         };
         Unloaded += (_, _) => HookWindowKeys(false);
     }
@@ -349,9 +351,19 @@ public sealed partial class CallsPage : Page
 
         card.Opacity = 0;
         SetScale(card, 0.82);
-        characterPopup.IsOpen = true;
 
-        AnimateCard(card, 0.82, 1, 0, 1, 150);
+        var opened = false;
+        card.Loaded += (_, _) =>
+        {
+            // Wait for layout: animating a card that has no size yet is what made it jitter.
+            if (opened || characterPopup is null)
+                return;
+
+            opened = true;
+            AnimateCard(card, 0.82, 1, 0, 1, 150, EaseOutCubic);
+        };
+
+        characterPopup.IsOpen = true;
     }
 
     private void HideCharacters(bool animate)
@@ -366,12 +378,17 @@ public sealed partial class CallsPage : Page
             return;
         }
 
-        AnimateCard(card, 1, 0.55, card.Opacity, 0, 70, () => popup.IsOpen = false);
+        // The reverse of the open, at twice the speed: the card settles back into the key.
+        AnimateCard(card, 1, 0.82, card.Opacity, 0, 75, EaseInCubic, () => popup.IsOpen = false);
     }
+
+    private static double EaseOutCubic(double progress) => 1 - Math.Pow(1 - progress, 3);
+
+    private static double EaseInCubic(double progress) => progress * progress * progress;
 
     // Driven frame by frame: the compositor animation path is not dependable under Uno/Skia, where a
     // Storyboard on a transform can silently do nothing and leave the card fully open or invisible.
-    private void AnimateCard(Border card, double fromScale, double toScale, double fromOpacity, double toOpacity, int milliseconds, Action? completed = null)
+    private void AnimateCard(Border card, double fromScale, double toScale, double fromOpacity, double toOpacity, int milliseconds, Func<double, double> easing, Action? completed = null)
     {
         var generation = ++cardAnimation;
         var started = Stopwatch.StartNew();
@@ -382,7 +399,7 @@ public sealed partial class CallsPage : Page
                 return;
 
             var progress = Math.Clamp(started.ElapsedMilliseconds / (double)milliseconds, 0, 1);
-            var eased = 1 - Math.Pow(1 - progress, 3);
+            var eased = easing(progress);
 
             card.Opacity = fromOpacity + ((toOpacity - fromOpacity) * eased);
             SetScale(card, fromScale + ((toScale - fromScale) * eased));
@@ -405,7 +422,8 @@ public sealed partial class CallsPage : Page
         }
     }
 
-    // Nothing else dismisses the menu: light dismiss would close it on the very press that held it open.
+    // Nothing else dismisses the menu, so the root content is watched too: a press on the pad or
+    // anywhere else has to take it down.
     private void OnRootPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (characterPopup is not { Child: Border card } popup)
@@ -414,6 +432,7 @@ public sealed partial class CallsPage : Page
         if (e.OriginalSource is DependencyObject source && IsInside(source, card))
             return;
 
+        Logger.LogInformation("Character menu dismissed by outside press");
         popup.IsOpen = false;
         characterPopup = null;
     }
