@@ -43,10 +43,7 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     public partial bool IsCallingSetupError { get; set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowDialerEmptyAvatar))]
     public partial string PhoneNumber { get; set; }
-
-    public bool ShowDialerEmptyAvatar => string.IsNullOrEmpty(PhoneNumber);
 
     partial void OnPhoneNumberChanged(string oldValue, string newValue)
     {

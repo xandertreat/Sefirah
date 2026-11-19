@@ -1,6 +1,7 @@
 using CommunityToolkit.WinUI.Helpers;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage.Streams;
+using Windows.UI;
 
 namespace Sefirah.UserControls;
 
@@ -172,22 +173,38 @@ public sealed partial class ContactAvatar : UserControl
 
     private void UpdatePlaceholderChrome()
     {
-        // A generated colour only works behind initials; without a name the glyph fights the theme
-        // foreground (white on the pale placeholders), so fall back to the neutral card.
-        if (UseThemePlaceholder || string.IsNullOrEmpty(Initials))
+        if (UseThemePlaceholder)
         {
             PlaceholderBorder.Background = Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush;
             PlaceholderBorder.BorderBrush = Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush;
             PlaceholderBorder.BorderThickness = new Thickness(1);
+            InitialsText.ClearValue(TextBlock.ForegroundProperty);
+            PersonGlyphIcon.ClearValue(IconElement.ForegroundProperty);
+            GroupGlyphIcon.ClearValue(IconElement.ForegroundProperty);
             return;
         }
 
         PlaceholderBorder.ClearValue(Border.BackgroundProperty);
         PlaceholderBorder.ClearValue(Border.BorderBrushProperty);
         PlaceholderBorder.BorderThickness = new Thickness(0);
-        PlaceholderBorder.Background = string.IsNullOrWhiteSpace(PlaceholderColorHex)
+
+        var background = string.IsNullOrWhiteSpace(PlaceholderColorHex)
             ? null
             : new SolidColorBrush(PlaceholderColorHex.ToColor());
+        PlaceholderBorder.Background = background;
+
+        var foreground = background is null ? null : new SolidColorBrush(GetReadableForeground(background.Color));
+        InitialsText.Foreground = foreground;
+        PersonGlyphIcon.Foreground = foreground;
+        GroupGlyphIcon.Foreground = foreground;
+    }
+
+    // The palette is mostly pale, and the theme foreground is white in dark mode, so the glyph
+    // is picked from the background instead of the theme.
+    private static Color GetReadableForeground(Color background)
+    {
+        var luminance = (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) / 255;
+        return luminance > 0.55 ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White;
     }
 
     private void UpdatePlaceholderContent()

@@ -320,11 +320,11 @@
                             Width="68"
                             Height="68"
                             UseThemePlaceholder="True"
-                            Visibility="{x:Bind ViewModel.ShowDialerEmptyAvatar, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource InverseEmptyObjectToVisibilityConverter}}" />
                         <controls:ContactAvatar
                             Width="68"
                             Height="68"
-                            Visibility="{x:Bind ViewModel.ShowDialerContact, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}"
                             ImageProvider="{x:Bind ViewModel.DialContact.AvatarStream, Mode=OneWay}"
                             Initials="{x:Bind ViewModel.DialContact.Initials, Mode=OneWay}"
                             PlaceholderColorHex="{x:Bind ViewModel.DialContact.PlaceholderColorHex, Mode=OneWay}" />
