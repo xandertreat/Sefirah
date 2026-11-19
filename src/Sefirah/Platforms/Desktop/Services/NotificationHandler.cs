@@ -174,6 +174,32 @@ public class NotificationHandler(
         }
     }
 
+    public async Task ShowUpdateNotification(string title, string text, string tag)
+    {
+        if (!await EnsureInitializedAsync() || _notifications is null)
+            return;
+
+        try
+        {
+            var replacesId = _notificationIds.GetValueOrDefault(tag, 0u);
+            var notificationId = await _notifications.NotifyAsync(
+                appName: "Sefirah",
+                replacesId: replacesId,
+                appIcon: "software-update-available",
+                summary: title,
+                body: text,
+                actions: [],
+                hints: [],
+                expireTimeout: 0);
+
+            _notificationIds[tag] = notificationId;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to show update notification");
+        }
+    }
+
     public async Task ShowBatteryNotification(string title, string text, string tag)
     {
         if (!await EnsureInitializedAsync() || _notifications is null)

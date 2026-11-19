@@ -22,6 +22,11 @@ public interface IPlatformNotificationHandler
     void ShowClipboardNotification(string title, string text, string? actionLabel = null, string? actionData = null);
 
     /// <summary>
+    /// Shows a "new version available" notification.
+    /// </summary>
+    Task ShowUpdateNotification(string title, string text, string tag);
+
+    /// <summary>
     /// Shows a low battery notification for a paired device.
     /// </summary>
     Task ShowBatteryNotification(string title, string text, string tag);

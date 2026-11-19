@@ -198,6 +198,9 @@ public class NotificationHandler(
     }
 
     /// <inheritdoc />
+    // Store updates on Windows are handled by Platforms/Windows/Services/UpdateService.
+    public Task ShowUpdateNotification(string title, string text, string tag) => Task.CompletedTask;
+
     public Task ShowBatteryNotification(string title, string text, string tag)
     {
         try
