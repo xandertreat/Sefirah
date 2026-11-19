@@ -220,11 +220,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             if (!ManagedObjectReader.Bool(properties, "Paired"))
                 await InvokeDeviceAsync(connection, devicePath, "Pair", cancellationToken);
 
-            await InvokeDeviceAsync(connection, devicePath, "Trust", cancellationToken);
-
             var address = ManagedObjectReader.String(properties, "Address");
             phone.BluetoothAddress = string.IsNullOrWhiteSpace(address) ? discoveredAddress : address;
             phone.BluetoothClassicDeviceId = devicePath;
+
+            // Trust is a property, not a method.
+            await SetDevicePropertyAsync(connection, devicePath, "Trusted", VariantValue.Bool(true), cancellationToken);
 
             State = new(BluetoothPairingStep.Ready, BluetoothPairingStatus.Success);
             logger.Info($"Paired {phone.Name} at {phone.BluetoothAddress}.");
@@ -564,6 +565,17 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         var writer = connection.GetMessageWriter();
         writer.WriteMethodCallHeader(BlueZService, adapterPath, PropertiesInterface, "Set", "ssv");
         writer.WriteString(AdapterInterface);
+        writer.WriteString(name);
+        writer.WriteVariant(value);
+        await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+    }
+
+    private static async Task SetDevicePropertyAsync(DBusConnection connection, string devicePath, string name,
+        VariantValue value, CancellationToken cancellationToken)
+    {
+        var writer = connection.GetMessageWriter();
+        writer.WriteMethodCallHeader(BlueZService, devicePath, PropertiesInterface, "Set", "ssv");
+        writer.WriteString(DeviceInterface);
         writer.WriteString(name);
         writer.WriteVariant(value);
         await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
