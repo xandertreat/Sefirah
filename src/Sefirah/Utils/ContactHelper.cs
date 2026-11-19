@@ -4,10 +4,10 @@ public static class ContactHelper
 {
     private static readonly string[] PlaceholderColors =
     [
-        "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7",
-        "#DDA0DD", "#98D8C8", "#F7DC6F", "#BB8FCE", "#85C1E9",
-        "#F8C471", "#82E0AA", "#F1948A", "#85C1E9", "#D7BDE2",
-        "#A9DFBF", "#F9E79F", "#AED6F1", "#FADBD8", "#D5DBDB"
+        "#5B8DEF", "#4B7FD6", "#6E7BF2", "#8E6BF2",
+        "#A85FD0", "#C75FA8", "#D45F8A", "#E06C75",
+        "#DE7B52", "#C9994B", "#8FA85B", "#54AE7A",
+        "#45A98C", "#4B9EBD", "#6B8FB8", "#7F8AA8"
     ];
 
     private static readonly char[] InitialSeparator = [' ', '\t', '\n', '\r'];

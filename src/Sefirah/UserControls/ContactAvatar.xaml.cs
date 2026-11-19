@@ -1,5 +1,7 @@
 using CommunityToolkit.WinUI.Helpers;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Foundation;
 using Windows.Storage.Streams;
 using Windows.UI;
 
@@ -184,20 +186,33 @@ public sealed partial class ContactAvatar : UserControl
             return;
         }
 
-        PlaceholderBorder.ClearValue(Border.BackgroundProperty);
-        PlaceholderBorder.ClearValue(Border.BorderBrushProperty);
-        PlaceholderBorder.BorderThickness = new Thickness(0);
+        var hasColor = !string.IsNullOrWhiteSpace(PlaceholderColorHex);
+        var baseColor = hasColor ? PlaceholderColorHex.ToColor() : default;
+        PlaceholderBorder.Background = hasColor ? CreateGradient(baseColor) : null;
 
-        var background = string.IsNullOrWhiteSpace(PlaceholderColorHex)
-            ? null
-            : new SolidColorBrush(PlaceholderColorHex.ToColor());
-        PlaceholderBorder.Background = background;
-
-        var foreground = background is null ? null : new SolidColorBrush(GetReadableForeground(background.Color));
+        var foreground = hasColor ? new SolidColorBrush(GetReadableForeground(baseColor)) : null;
         InitialsText.Foreground = foreground;
         PersonGlyphIcon.Foreground = foreground;
         GroupGlyphIcon.Foreground = foreground;
     }
+
+    // A two stop gradient of the contact colour reads as a designed avatar rather than a flat swatch.
+    private static LinearGradientBrush CreateGradient(Color color) => new()
+    {
+        StartPoint = new Point(0, 0),
+        EndPoint = new Point(1, 1),
+        GradientStops =
+        {
+            new GradientStop { Color = Shade(color, 1.22), Offset = 0 },
+            new GradientStop { Color = Shade(color, 0.74), Offset = 1 }
+        }
+    };
+
+    private static Color Shade(Color color, double factor) => Color.FromArgb(
+        color.A,
+        (byte)Math.Clamp(color.R * factor, 0, 255),
+        (byte)Math.Clamp(color.G * factor, 0, 255),
+        (byte)Math.Clamp(color.B * factor, 0, 255));
 
     // The palette is mostly pale, and the theme foreground is white in dark mode, so the glyph
     // is picked from the background instead of the theme.
