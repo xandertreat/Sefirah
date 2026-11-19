@@ -224,8 +224,16 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             phone.BluetoothAddress = string.IsNullOrWhiteSpace(address) ? discoveredAddress : address;
             phone.BluetoothClassicDeviceId = devicePath;
 
-            // Trust is a property, not a method.
-            await SetDevicePropertyAsync(connection, devicePath, "Trusted", VariantValue.Bool(true), cancellationToken);
+            // Trust is a property, not a method. It only affects reconnecting later, so a refusal
+            // must not report the whole pairing as failed.
+            try
+            {
+                await SetDevicePropertyAsync(connection, devicePath, "Trusted", VariantValue.Bool(true), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"Could not mark {phone.Name} as trusted: {ex.Message}");
+            }
 
             State = new(BluetoothPairingStep.Ready, BluetoothPairingStatus.Success);
             logger.Info($"Paired {phone.Name} at {phone.BluetoothAddress}.");
