@@ -32,6 +32,7 @@ public sealed partial class CallsPage : Page
     {
         InitializeComponent();
         BuildDialPad();
+        AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
         ViewModel = Ioc.Default.GetRequiredService<CallsPageViewModel>();
         DataContext = ViewModel;
         Loaded += (_, _) =>
@@ -284,6 +285,8 @@ public sealed partial class CallsPage : Page
     }
 
     private Popup? characterPopup;
+    private int cardAnimation;
+    private readonly ILogger Logger = Ioc.Default.GetRequiredService<ILogger<CallsPage>>();
 
     // Held or right-clicked keys open their characters as cubes that grow out of the key.
     private void ShowCharacters(Button button, string key, string? characters)
@@ -335,24 +338,20 @@ public sealed partial class CallsPage : Page
         characterPopup = new Popup
         {
             Child = card,
-            IsLightDismissEnabled = true,
             XamlRoot = XamlRoot,
             HorizontalOffset = Math.Max(8, origin.X + ((button.ActualWidth - card.DesiredSize.Width) / 2)),
             VerticalOffset = Math.Max(8, origin.Y - card.DesiredSize.Height - 10),
         };
         characterPopup.Closed += (_, _) => characterPopup = null;
 
-        // Start collapsed so the first frame cannot paint the finished card (that read as a stutter).
-        card.Opacity = 0;
-        if (card.RenderTransform is CompositeTransform initial)
-        {
-            initial.ScaleX = 0.82;
-            initial.ScaleY = 0.82;
-        }
+        Logger.LogInformation("Character menu for {Key}: {Width}x{Height} cubes at {X},{Y}",
+            key, card.DesiredSize.Width, card.DesiredSize.Height, origin.X, origin.Y);
 
+        card.Opacity = 0;
+        SetScale(card, 0.82);
         characterPopup.IsOpen = true;
 
-        AnimateCharacters(card, from: 0.82, to: 1, opacity: 1, milliseconds: 150);
+        AnimateCard(card, 0.82, 1, 0, 1, 150);
     }
 
     private void HideCharacters(bool animate)
@@ -367,52 +366,67 @@ public sealed partial class CallsPage : Page
             return;
         }
 
-        AnimateCharacters(card, from: 1, to: 0.55, opacity: 0, milliseconds: 70, () => popup.IsOpen = false);
+        AnimateCard(card, 1, 0.55, card.Opacity, 0, 70, () => popup.IsOpen = false);
     }
 
-    private static void AnimateCharacters(Border card, double from, double to, double opacity, int milliseconds, Action? completed = null)
+    // Driven frame by frame: the compositor animation path is not dependable under Uno/Skia, where a
+    // Storyboard on a transform can silently do nothing and leave the card fully open or invisible.
+    private void AnimateCard(Border card, double fromScale, double toScale, double fromOpacity, double toOpacity, int milliseconds, Action? completed = null)
     {
-        var storyboard = new Storyboard();
+        var generation = ++cardAnimation;
+        var started = Stopwatch.StartNew();
+
+        void Step()
+        {
+            if (generation != cardAnimation)
+                return;
+
+            var progress = Math.Clamp(started.ElapsedMilliseconds / (double)milliseconds, 0, 1);
+            var eased = 1 - Math.Pow(1 - progress, 3);
+
+            card.Opacity = fromOpacity + ((toOpacity - fromOpacity) * eased);
+            SetScale(card, fromScale + ((toScale - fromScale) * eased));
+
+            if (progress < 1)
+                DispatcherQueue.TryEnqueue(Step);
+            else
+                completed?.Invoke();
+        }
+
+        Step();
+    }
+
+    private static void SetScale(Border card, double scale)
+    {
         if (card.RenderTransform is CompositeTransform transform)
         {
-            storyboard.Children.Add(CharacterAnimation(transform, "ScaleX", from, to, milliseconds));
-            storyboard.Children.Add(CharacterAnimation(transform, "ScaleY", from, to, milliseconds));
-        }
-        storyboard.Children.Add(CharacterAnimation(card, "Opacity", card.Opacity, opacity, milliseconds));
-
-        if (completed is not null)
-            storyboard.Completed += (_, _) => completed();
-
-        try
-        {
-            storyboard.Begin();
-        }
-        catch (Exception)
-        {
-            // No animation support: land on the final state and still report completion.
-            card.Opacity = opacity;
-            if (card.RenderTransform is CompositeTransform final)
-            {
-                final.ScaleX = to;
-                final.ScaleY = to;
-            }
-            completed?.Invoke();
+            transform.ScaleX = scale;
+            transform.ScaleY = scale;
         }
     }
 
-    private static DoubleAnimation CharacterAnimation(DependencyObject target, string property, double from, double to, int milliseconds)
+    // Nothing else dismisses the menu: light dismiss would close it on the very press that held it open.
+    private void OnRootPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var animation = new DoubleAnimation
+        if (characterPopup is not { Child: Border card } popup)
+            return;
+
+        if (e.OriginalSource is DependencyObject source && IsInside(source, card))
+            return;
+
+        popup.IsOpen = false;
+        characterPopup = null;
+    }
+
+    private static bool IsInside(DependencyObject source, DependencyObject container)
+    {
+        for (var node = source; node is not null; node = VisualTreeHelper.GetParent(node))
         {
-            From = from,
-            To = to,
-            Duration = new Duration(TimeSpan.FromMilliseconds(milliseconds)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-            EnableDependentAnimation = true,
-        };
-        Storyboard.SetTarget(animation, target);
-        Storyboard.SetTargetProperty(animation, property);
-        return animation;
+            if (ReferenceEquals(node, container))
+                return true;
+        }
+
+        return false;
     }
 
     private static Brush? ThemeBrush(string key) =>
