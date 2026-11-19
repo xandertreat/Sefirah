@@ -404,7 +404,7 @@
                             HorizontalAlignment="Center"
                             Delay="400"
                             Click="RepeatBackspaceButton_Click"
-                            Visibility="{x:Bind ViewModel.HasPhoneNumber, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            Visibility="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource StringVisibilityConverter}}">
                             <FontIcon Glyph="&#xE94F;" FontSize="16"/>
                         </RepeatButton>
                     </Grid>

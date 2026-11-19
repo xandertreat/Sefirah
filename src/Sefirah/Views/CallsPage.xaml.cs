@@ -249,11 +249,11 @@ public sealed partial class CallsPage : Page
         }
     }
 
-    // A click types the key; holding or right-clicking offers the characters printed under it.
+    // A click types the key; holding it or right-clicking offers the characters printed under it.
     private void HookCharacterHold(Button button, string key, string? characters)
     {
         var held = false;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
         timer.Tick += (_, _) =>
         {
             timer.Stop();
@@ -261,9 +261,21 @@ public sealed partial class CallsPage : Page
             ShowCharacters(button, key, characters);
         };
 
-        button.PointerPressed += (_, _) =>
+        button.PointerPressed += (_, e) =>
         {
             held = false;
+
+            // Right click is detected here rather than from RightTapped, which is not raised for
+            // every pointer source.
+            if (e.GetCurrentPoint(button).Properties.IsRightButtonPressed)
+            {
+                timer.Stop();
+                held = true;
+                Logger.LogInformation("Key {Key} right pressed", key);
+                ShowCharacters(button, key, characters);
+                return;
+            }
+
             timer.Start();
         };
         button.PointerReleased += (_, _) => timer.Stop();
@@ -271,6 +283,9 @@ public sealed partial class CallsPage : Page
         button.PointerCaptureLost += (_, _) => timer.Stop();
         button.Click += (_, _) =>
         {
+            // Click can arrive after the timer has already opened the menu, so it stops here too.
+            timer.Stop();
+            Logger.LogInformation("Key {Key} clicked held={Held}", key, held);
             if (held)
             {
                 held = false;
