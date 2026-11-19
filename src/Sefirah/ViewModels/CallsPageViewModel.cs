@@ -2,6 +2,7 @@ using CommunityToolkit.WinUI;
 using Sefirah.Data.AppDatabase.Repository;
 using Sefirah.Data.Models;
 using Sefirah.Dialogs;
+using Sefirah.Platforms.Desktop.Services;
 
 namespace Sefirah.ViewModels;
 
@@ -274,6 +275,7 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     private void AppendDialKey(string? key)
     {
         if (string.IsNullOrEmpty(key)) return;
+        DialTonePlayer.Play(key[0]);
         ClearDialContactVisual();
         PhoneNumber += key;
     }
