@@ -1,4 +1,6 @@
 using Microsoft.UI.Input;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Sefirah.Data.Models;
 using Sefirah.Platforms.Desktop.Services;
@@ -11,11 +13,20 @@ namespace Sefirah.Views;
 public sealed partial class CallsPage : Page
 {
     public CallsPageViewModel ViewModel { get; }
-    private bool suppressZeroClick;
+
+    // Characters printed under each key. Null means the key carries none.
+    private static readonly (string Key, string? Characters)[] DialKeys =
+    [
+        ("1", null), ("2", "ABC"), ("3", "DEF"),
+        ("4", "GHI"), ("5", "JKL"), ("6", "MNO"),
+        ("7", "PQRS"), ("8", "TUV"), ("9", "WXYZ"),
+        ("*", null), ("0", "+"), ("#", null),
+    ];
 
     public CallsPage()
     {
         InitializeComponent();
+        BuildDialPad();
         ViewModel = Ioc.Default.GetRequiredService<CallsPageViewModel>();
         DataContext = ViewModel;
         Loaded += (_, _) =>
@@ -192,35 +203,92 @@ public sealed partial class CallsPage : Page
         await ViewModel.DialSelectedCallLogAsync(callLog);
     }
 
-    private void DialZeroButton_Click(object sender, RoutedEventArgs e)
+    private void BuildDialPad()
     {
-        if (suppressZeroClick)
+        for (var i = 0; i < DialKeys.Length; i++)
         {
-            suppressZeroClick = false;
-            return;
-        }
+            var (key, characters) = DialKeys[i];
 
-        DialTonePlayer.Play('0');
-        ViewModel.PhoneNumber += "0";
+            var label = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            label.Children.Add(new TextBlock { Text = key, HorizontalAlignment = HorizontalAlignment.Center });
+            if (!string.IsNullOrEmpty(characters))
+            {
+                label.Children.Add(new TextBlock
+                {
+                    Text = characters,
+                    FontSize = 10,
+                    Opacity = 0.75,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                });
+            }
+
+            var button = new Button { Style = (Style)Resources["DialPadKeyStyle"], Content = label };
+            Grid.SetRow(button, i / 3);
+            Grid.SetColumn(button, i % 3);
+            HookCharacterHold(button, key, characters);
+            DialPad.Children.Add(button);
+        }
     }
 
-    private void DialZeroButton_Holding(object sender, HoldingRoutedEventArgs e)
+    // A click types the key; holding or right-clicking offers the characters printed under it.
+    private void HookCharacterHold(Button button, string key, string? characters)
     {
-        if (e.HoldingState is HoldingState.Completed)
+        var held = false;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        timer.Tick += (_, _) =>
         {
-            suppressZeroClick = true;
-            DialTonePlayer.Play('0');
-            ViewModel.PhoneNumber += "+";
+            timer.Stop();
+            held = true;
+            ShowCharacters(button, key, characters);
+        };
+
+        button.PointerPressed += (_, _) =>
+        {
+            held = false;
+            timer.Start();
+        };
+        button.PointerReleased += (_, _) => timer.Stop();
+        button.PointerExited += (_, _) => timer.Stop();
+        button.PointerCanceled += (_, _) => timer.Stop();
+        button.Click += (_, _) =>
+        {
+            if (held)
+            {
+                held = false;
+                return;
+            }
+
+            ViewModel.AppendDialKeyCommand.Execute(key);
+        };
+        button.RightTapped += (_, e) =>
+        {
             e.Handled = true;
-        }
+            ShowCharacters(button, key, characters);
+        };
     }
 
-    private void DialZeroButton_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void ShowCharacters(Button button, string key, string? characters)
     {
-        suppressZeroClick = true;
-        DialTonePlayer.Play('0');
-        ViewModel.PhoneNumber += "+";
-        e.Handled = true;
+        if (string.IsNullOrEmpty(characters))
+            return;
+
+        var flyout = new MenuFlyout();
+        foreach (var character in characters)
+        {
+            var item = new MenuFlyoutItem { Text = character.ToString(), MinWidth = 44 };
+            item.Click += (_, _) =>
+            {
+                DialTonePlayer.Play(key[0]); // the tone follows the key, not the letter
+                ViewModel.AppendDialKeyCommand.Execute(character.ToString());
+            };
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt(button);
     }
 
     private void RepeatBackspaceButton_Click(object sender, RoutedEventArgs e)
