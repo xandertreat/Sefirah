@@ -190,11 +190,14 @@ public sealed partial class ContactAvatar : UserControl
         var baseColor = hasColor ? PlaceholderColorHex.ToColor() : default;
         PlaceholderBorder.Background = hasColor ? CreateGradient(baseColor) : null;
 
-        var foreground = hasColor ? new SolidColorBrush(GetReadableForeground(baseColor)) : null;
+        // Off-white everywhere: the soft palette carries it without the harshness of pure white.
+        var foreground = hasColor ? new SolidColorBrush(PlaceholderForeground) : null;
         InitialsText.Foreground = foreground;
         PersonGlyphIcon.Foreground = foreground;
         GroupGlyphIcon.Foreground = foreground;
     }
+
+    private static readonly Color PlaceholderForeground = Color.FromArgb(255, 0xF7, 0xF3, 0xEE);
 
     // A two stop gradient of the contact colour reads as a designed avatar rather than a flat swatch.
     private static LinearGradientBrush CreateGradient(Color color) => new()
@@ -213,14 +216,6 @@ public sealed partial class ContactAvatar : UserControl
         (byte)Math.Clamp(color.R * factor, 0, 255),
         (byte)Math.Clamp(color.G * factor, 0, 255),
         (byte)Math.Clamp(color.B * factor, 0, 255));
-
-    // The palette is mostly pale, and the theme foreground is white in dark mode, so the glyph
-    // is picked from the background instead of the theme.
-    private static Color GetReadableForeground(Color background)
-    {
-        var luminance = (0.299 * background.R + 0.587 * background.G + 0.114 * background.B) / 255;
-        return luminance > 0.55 ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White;
-    }
 
     private void UpdatePlaceholderContent()
     {
