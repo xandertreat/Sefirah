@@ -172,7 +172,9 @@ public sealed partial class ContactAvatar : UserControl
 
     private void UpdatePlaceholderChrome()
     {
-        if (UseThemePlaceholder)
+        // A generated colour only works behind initials; without a name the glyph fights the theme
+        // foreground (white on the pale placeholders), so fall back to the neutral card.
+        if (UseThemePlaceholder || string.IsNullOrEmpty(Initials))
         {
             PlaceholderBorder.Background = Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush;
             PlaceholderBorder.BorderBrush = Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush;

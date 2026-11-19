@@ -38,6 +38,11 @@ public class Contact
 
     public string Initials => ContactHelper.GetInitials(DisplayName);
 
+    /// <summary>
+    /// Nothing but a number: no name to show and no profile worth inventing for it.
+    /// </summary>
+    public bool IsNumberOnly => DisplayName == Address;
+
     public bool HasInitials => !string.IsNullOrEmpty(Initials);
 
     public Task<Uri?> GetToastAvatarUriAsync() =>

@@ -42,8 +42,11 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     [ObservableProperty]
     public partial bool IsCallingSetupError { get; set; }
 
-    [ObservableProperty] 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDialerEmptyAvatar))]
     public partial string PhoneNumber { get; set; }
+
+    public bool ShowDialerEmptyAvatar => string.IsNullOrEmpty(PhoneNumber);
 
     partial void OnPhoneNumberChanged(string oldValue, string newValue)
     {
@@ -60,7 +63,14 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     public partial CallLog? SelectedCallLog { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDialerContact))]
+    [NotifyPropertyChangedFor(nameof(ShowDialerNumber))]
     public partial Contact? DialContact { get; set; }
+
+    // A number with no name behind it gets one row, not a name plus the same number again.
+    public bool ShowDialerContact => DialContact is { IsNumberOnly: false };
+
+    public bool ShowDialerNumber => !ShowDialerContact;
 
     private bool isLoadingCallLogs;
     public bool IsLoadingCallLogs
