@@ -1,7 +1,12 @@
 using Microsoft.UI.Input;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
+using Windows.Foundation;
 using Sefirah.Data.Models;
 using Sefirah.Platforms.Desktop.Services;
 using Sefirah.ViewModels;
@@ -278,25 +283,130 @@ public sealed partial class CallsPage : Page
         };
     }
 
+    private Popup? characterPopup;
+
+    // Held or right-clicked keys open their characters as cubes that grow out of the key.
     private void ShowCharacters(Button button, string key, string? characters)
     {
         if (string.IsNullOrEmpty(characters))
             return;
 
-        var flyout = new MenuFlyout();
+        HideCharacters(animate: false);
+
+        var cubes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         foreach (var character in characters)
         {
-            var item = new MenuFlyoutItem { Text = character.ToString(), MinWidth = 44 };
-            item.Click += (_, _) =>
+            var cube = new Button
+            {
+                Content = character.ToString(),
+                Width = 48,
+                Height = 48,
+                Padding = new Thickness(0),
+                FontSize = 20,
+                FontWeight = FontWeights.SemiBold,
+                CornerRadius = new CornerRadius(12),
+                Background = ThemeBrush("SubtleFillColorSecondaryBrush"),
+                BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+                BorderThickness = new Thickness(1),
+            };
+            cube.Click += (_, _) =>
             {
                 DialTonePlayer.Play(key[0]); // the tone follows the key, not the letter
                 ViewModel.AppendDialKeyCommand.Execute(character.ToString());
+                HideCharacters(animate: true);
             };
-            flyout.Items.Add(item);
+            cubes.Children.Add(cube);
         }
 
-        flyout.ShowAt(button);
+        var card = new Border
+        {
+            Child = cubes,
+            Padding = new Thickness(8),
+            CornerRadius = new CornerRadius(16),
+            Background = ThemeBrush("AcrylicInAppFillColorDefaultBrush") ?? ThemeBrush("CardBackgroundFillColorDefaultBrush"),
+            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(1),
+            RenderTransformOrigin = new Point(0.5, 1),
+            RenderTransform = new CompositeTransform(),
+        };
+        card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+        var origin = button.TransformToVisual(null).TransformPoint(new Point(0, 0));
+        characterPopup = new Popup
+        {
+            Child = card,
+            IsLightDismissEnabled = true,
+            XamlRoot = XamlRoot,
+            HorizontalOffset = Math.Max(8, origin.X + ((button.ActualWidth - card.DesiredSize.Width) / 2)),
+            VerticalOffset = Math.Max(8, origin.Y - card.DesiredSize.Height - 10),
+        };
+        characterPopup.Closed += (_, _) => characterPopup = null;
+        characterPopup.IsOpen = true;
+
+        AnimateCharacters(card, 0.82, 1, 180);
     }
+
+    private void HideCharacters(bool animate)
+    {
+        if (characterPopup is not { } popup)
+            return;
+
+        characterPopup = null;
+        if (!animate || popup.Child is not Border card)
+        {
+            popup.IsOpen = false;
+            return;
+        }
+
+        AnimateCharacters(card, 0.9, 0, 120, () => popup.IsOpen = false);
+    }
+
+    private static void AnimateCharacters(Border card, double scale, double opacity, int milliseconds, Action? completed = null)
+    {
+        var storyboard = new Storyboard();
+        if (card.RenderTransform is CompositeTransform transform)
+        {
+            storyboard.Children.Add(CharacterAnimation(transform, "ScaleX", scale, milliseconds));
+            storyboard.Children.Add(CharacterAnimation(transform, "ScaleY", scale, milliseconds));
+        }
+        storyboard.Children.Add(CharacterAnimation(card, "Opacity", opacity, milliseconds));
+
+        if (completed is not null)
+            storyboard.Completed += (_, _) => completed();
+
+        try
+        {
+            storyboard.Begin();
+        }
+        catch (Exception)
+        {
+            // No animation support: land on the final state and still report completion.
+            card.Opacity = opacity;
+            if (card.RenderTransform is CompositeTransform final)
+            {
+                final.ScaleX = scale;
+                final.ScaleY = scale;
+            }
+            completed?.Invoke();
+        }
+    }
+
+    private static DoubleAnimation CharacterAnimation(DependencyObject target, string property, double to, int milliseconds)
+    {
+        var animation = new DoubleAnimation
+        {
+            To = to,
+            Duration = new Duration(TimeSpan.FromMilliseconds(milliseconds)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+            EnableDependentAnimation = true,
+        };
+        Storyboard.SetTarget(animation, target);
+        Storyboard.SetTargetProperty(animation, property);
+        return animation;
+    }
+
+    private static Brush? ThemeBrush(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value) ? value as Brush : null;
 
     private void RepeatBackspaceButton_Click(object sender, RoutedEventArgs e)
     {
