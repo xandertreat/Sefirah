@@ -2,6 +2,7 @@ using Sefirah.Data.Models;
 using Sefirah.ViewModels;
 using Sefirah.ViewModels.Settings;
 using Windows.ApplicationModel.DataTransfer;
+using Rectangle = Microsoft.UI.Xaml.Shapes.Rectangle;
 
 namespace Sefirah.Views;
 
@@ -129,6 +130,8 @@ public sealed partial class MainPage : Page
 
     private void MainNavigationView_Loaded(object sender, RoutedEventArgs e)
     {
+        WidenTopPaneIndicators();
+
         var savedPage = ApplicationData.Current.LocalSettings.Values[Constants.LocalSettings.MainNavigationSelection] as string;
         var page = ViewModel.Device is not null && savedPage is not null && Pages.ContainsKey(savedPage)
             ? savedPage
@@ -139,6 +142,8 @@ public sealed partial class MainPage : Page
 
     private void NavigationView_SelectionChanged(NavigationView _, NavigationViewSelectionChangedEventArgs args)
     {
+        WidenTopPaneIndicators();
+
         string? tag = (args.SelectedItem as NavigationViewItem)?.Tag?.ToString();
 
         if (tag is null || !Pages.TryGetValue(tag, out Type? pageType))
@@ -148,8 +153,7 @@ public sealed partial class MainPage : Page
         ContentFrame.Navigate(pageType);
     }
 
-    public void NavigateToPage(string pageTag)
-    {
+    public void NavigateToPage(string pageTag)    {
         if (!Pages.ContainsKey(pageTag))
             return;
 
@@ -161,6 +165,39 @@ public sealed partial class MainPage : Page
             "Settings" => MainNavigationView.SettingsItem,
             _ => MainNavigationView.SelectedItem
         };
+    }
+
+    // Uno hardcodes the top pane underline at 16px and centres it, so it stops partway through a tab.
+    // The template parts are stable, and a missing one just leaves the default look.
+    private void WidenTopPaneIndicators()
+    {
+        foreach (var item in MainNavigationView.MenuItems.OfType<NavigationViewItem>())
+            Widen(item, 0);
+    }
+
+    private static void Widen(DependencyObject root, int depth)
+    {
+        // The presenter sits a few levels down; the limit keeps the walk from scanning the whole tree.
+        if (depth > 8)
+            return;
+
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+
+            if (child is Grid { Name: "SelectionIndicatorGrid" } indicatorGrid)
+            {
+                indicatorGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+                indicatorGrid.Margin = new Thickness(12, 0, 12, 4);
+            }
+            else if (child is Rectangle { Name: "SelectionIndicator" } indicator)
+            {
+                indicator.HorizontalAlignment = HorizontalAlignment.Stretch;
+                indicator.Width = double.NaN;
+            }
+
+            Widen(child, depth + 1);
+        }
     }
 
     private void DiscoveredDeviceButton_Click(object sender, RoutedEventArgs e)
