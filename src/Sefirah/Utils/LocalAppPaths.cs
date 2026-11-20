@@ -73,11 +73,22 @@ public static class LocalAppPaths
         }
     }
 
-    public static string GetAppIconFilePath(string deviceId, string packageName) =>
-        Path.Combine(GetDeviceIconsFolder(deviceId), $"{packageName}.png");
+    // packageName comes from the phone: keep it a plain file name inside the icons folder.
+    public static string GetAppIconFilePath(string deviceId, string packageName)
+    {
+        var folder = Path.GetFullPath(GetDeviceIconsFolder(deviceId));
+        var leaf = Path.GetFileName(packageName);
+        if (string.IsNullOrEmpty(leaf) || leaf != packageName || leaf is "." or "..")
+            throw new ArgumentException("Invalid package name", nameof(packageName));
+
+        var path = Path.GetFullPath(Path.Combine(folder, $"{leaf}.png"));
+        if (!path.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new ArgumentException("Invalid package name", nameof(packageName));
+        return path;
+    }
 
     public static string GetAppIconPath(string deviceId, string packageName) =>
-        $"ms-appdata:///local/{DevicesFolderName}/{deviceId}/{DeviceIconsFolderName}/{packageName}.png";
+        $"ms-appdata:///local/{DevicesFolderName}/{deviceId}/{DeviceIconsFolderName}/{Uri.EscapeDataString(packageName)}.png";
 
     public static void EnsureDeviceFolder(string deviceId) =>
         Directory.CreateDirectory(GetDeviceFolder(deviceId));

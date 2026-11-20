@@ -33,8 +33,15 @@ public static class IconUtils
 
     public static Uri? GetAppIconUri(string deviceId, string packageName)
     {
-        if (!File.Exists(LocalAppPaths.GetAppIconFilePath(deviceId, packageName)))
+        try
+        {
+            if (!File.Exists(LocalAppPaths.GetAppIconFilePath(deviceId, packageName)))
+                return null;
+        }
+        catch (ArgumentException)
+        {
             return null;
+        }
 
         return new Uri(LocalAppPaths.GetAppIconPath(deviceId, packageName));
     }
