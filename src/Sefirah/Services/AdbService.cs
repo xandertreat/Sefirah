@@ -934,9 +934,9 @@ public partial class AdbService(
     }
 
     /// <summary>Starts the worker via adb shell if it isn't already running.</summary>
-    // Assumed phone command: `CLASSPATH=<apk path | $(pm path <pkg> ...)> app_process <dir> --nice-name=sefirah_worker <Class> [args] [&]`.
-    // Anything else (pipes, ;, &&, backticks, other binaries) is refused instead of reaching adb shell.
-    [GeneratedRegex(@"^(CLASSPATH=(\$\(pm path [A-Za-z0-9._]+( \| (cut -d: -f2|sed 's/package://'))?\)|[A-Za-z0-9._/=-]+) )?(nohup )?app_process [A-Za-z0-9._/-]+ --nice-name=sefirah_worker [A-Za-z0-9._$]+( [A-Za-z0-9._=:/-]+)*( > /dev/null 2>&1)?( &)?$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    // The phone sends WorkerStarter.command(): `<nativeLibraryDir>/libsefirah_worker.so --apk=<sourceDir>` (shrimqy/Sefirah-Android).
+    // Only that exact shape under /data/app is allowed; anything else (other binaries, ;, |, $(), ..) is refused.
+    [GeneratedRegex(@"^(?!.*\.\.)/data/app/[A-Za-z0-9._~=+/-]+/lib/[a-z0-9_]+/libsefirah_worker\.so --apk=/data/app/[A-Za-z0-9._~=+/-]+/base\.apk$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex WorkerCommandRegex();
 
     public async Task TryStartWorkerAsync(PairedDevice device, string command)
