@@ -137,6 +137,23 @@ public class SftpFeature(
         _sessions.Remove(deviceId);
     }
 
+    public string? GetLocalRoot(string deviceId)
+    {
+        if (!_sessions.TryGetValue(deviceId, out var session) || session is not { Backend: { } backend, Location: { } location })
+            return null;
+
+        if (backend is MountBackend.Sshfs)
+            return Directory.Exists(location) ? location : null;
+
+        // GVfs names its FUSE mount after the URI options, not the URI itself.
+        var runtimeDir = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
+        if (string.IsNullOrEmpty(runtimeDir) || !Directory.Exists(runtimeDir))
+            return null;
+
+        var fusePath = Path.Combine(runtimeDir, "gvfs", $"sftp:host={session.Host},port={session.Info.Port},user={session.Info.Username}");
+        return Directory.Exists(fusePath) ? fusePath : null;
+    }
+
     private async Task<bool> TryMountGvfsAsync(string deviceId, string host, SftpServerInfo info)
     {
         try

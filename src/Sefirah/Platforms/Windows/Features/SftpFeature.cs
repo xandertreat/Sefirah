@@ -182,6 +182,12 @@ public class SftpFeature(
         await StopAndUnregister(GetSyncRootsForDevice(deviceId));
     }
 
+    public string? GetLocalRoot(string deviceId)
+    {
+        var directory = GetSyncRootsForDevice(deviceId).FirstOrDefault()?.Directory;
+        return directory is not null && Directory.Exists(directory) ? directory : null;
+    }
+
     private async Task StopSyncRoots(IEnumerable<SyncRootInfo> syncRoots)
     {
         foreach (var syncRoot in syncRoots.ToList())

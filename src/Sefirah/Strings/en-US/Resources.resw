@@ -1097,4 +1097,52 @@ input text %pwd%</value>
   <data name="DialerBackspace" xml:space="preserve">
     <value>Delete digit</value>
   </data>
+  <data name="Gallery" xml:space="preserve">
+    <value>Gallery</value>
+  </data>
+  <data name="Photos" xml:space="preserve">
+    <value>Photos</value>
+  </data>
+  <data name="Videos" xml:space="preserve">
+    <value>Videos</value>
+  </data>
+  <data name="AllMedia" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="NoMedia" xml:space="preserve">
+    <value>No photos or videos here yet</value>
+  </data>
+  <data name="MediaUnavailable" xml:space="preserve">
+    <value>The device storage is not mounted. Connect the device over SFTP to browse its media.</value>
+  </data>
+  <data name="SaveCopy" xml:space="preserve">
+    <value>Save a copy</value>
+  </data>
+  <data name="Open" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="SavedTo" xml:space="preserve">
+    <value>Saved to {0}</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>Could not save a copy of that file.</value>
+  </data>
+  <data name="DeletedMedia" xml:space="preserve">
+    <value>Deleted {0} from the device</value>
+  </data>
+  <data name="DeleteFailed" xml:space="preserve">
+    <value>Could not delete that file.</value>
+  </data>
+  <data name="DeleteMediaTitle" xml:space="preserve">
+    <value>Delete from device?</value>
+  </data>
+  <data name="DeleteMediaBody" xml:space="preserve">
+    <value>{0} will be removed from the phone. This cannot be undone.</value>
+  </data>
 </root>

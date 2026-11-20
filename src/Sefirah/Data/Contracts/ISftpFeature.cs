@@ -22,4 +22,9 @@ public interface ISftpFeature : IFeature
     void Remove(string deviceId);
 
     Task RemoveAll();
+
+    /// <summary>
+    /// Local filesystem path of the mounted device storage, or null when the device is not mounted.
+    /// </summary>
+    string? GetLocalRoot(string deviceId);
 }

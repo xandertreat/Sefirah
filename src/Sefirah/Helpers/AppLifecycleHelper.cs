@@ -145,6 +145,7 @@ public static class AppLifecycleHelper
                 .AddSingleton<AppsViewModel>()
                 .AddSingleton<MessagesViewModel>()
                 .AddSingleton<CallsPageViewModel>()
+                .AddSingleton<GalleryViewModel>()
                 )
             );
     }

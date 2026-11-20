@@ -22,7 +22,8 @@ public sealed partial class MainPage : Page
         { "Settings", typeof(SettingsPage) },
         { "Calls", typeof(CallsPage) },
         { "Messages", typeof(MessagesPage) },
-        { "Apps", typeof(AppsPage) }
+        { "Apps", typeof(AppsPage) },
+        { "Gallery", typeof(GalleryPage) }
     };
 
     public MainPage()
@@ -162,6 +163,7 @@ public sealed partial class MainPage : Page
             "Calls" => CallsNavigationItem,
             "Messages" => MessagesNavigationItem,
             "Apps" => AppsNavigationItem,
+            "Gallery" => GalleryNavigationItem,
             "Settings" => MainNavigationView.SettingsItem,
             _ => MainNavigationView.SelectedItem
         };

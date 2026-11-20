@@ -391,6 +391,15 @@
                             </NavigationViewItem.Icon>
                         </NavigationViewItem>
                         <NavigationViewItem
+                            x:Name="GalleryNavigationItem"
+                            Content="{helpers:ResourceString Name=Gallery}"
+                            Tag="Gallery"
+                            Visibility="{x:Bind ViewModel.Device, Converter={StaticResource EmptyObjectToVisibilityConverter}, Mode=OneWay}">
+                            <NavigationViewItem.Icon>
+                                <FontIcon Glyph="&#xEB9F;" />
+                            </NavigationViewItem.Icon>
+                        </NavigationViewItem>
+                        <NavigationViewItem
                             x:Name="AppsNavigationItem"
                             Content="{helpers:ResourceString Name=Apps}"
                             Tag="Apps"
