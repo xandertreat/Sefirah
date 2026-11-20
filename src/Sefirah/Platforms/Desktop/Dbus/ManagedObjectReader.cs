@@ -71,6 +71,9 @@ internal static class ManagedObjectReader
     public static bool Bool(Dictionary<string, VariantValue> props, string key) =>
         props.TryGetValue(key, out var value) && value.Type == VariantValueType.Bool && value.GetBool();
 
+    public static string[] Strings(Dictionary<string, VariantValue> props, string key) =>
+        props.TryGetValue(key, out var value) && value.Type == VariantValueType.Array ? value.GetArray<string>() : [];
+
     public static string Describe(Dictionary<string, VariantValue> props, params string[] keys)
     {
         foreach (var key in keys)
