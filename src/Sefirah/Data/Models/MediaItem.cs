@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace Sefirah.Data.Models;
@@ -17,7 +18,7 @@ public sealed partial class MediaItem : ObservableObject
     public DateTime Modified { get; init; }
 
     [ObservableProperty]
-    public partial BitmapImage? Thumbnail { get; set; }
+    public partial ImageSource? Thumbnail { get; set; }
 
     public string Description => $"{Name}\n{Folder} · {FormatSize(Size)} · {Modified.ToLocalTime():g}";
 

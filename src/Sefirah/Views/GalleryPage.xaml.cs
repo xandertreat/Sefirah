@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Sefirah.Data.Models;
 using Sefirah.ViewModels;
@@ -53,10 +54,17 @@ public sealed partial class GalleryPage : Page
     }
 
     // Uno does not raise ContainerContentChanging, so the tile asks for its thumbnail once it is realized.
-    private async void MediaTile_Loaded(object sender, RoutedEventArgs e)
+    private void MediaTile_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: MediaItem item })
-            await ViewModel.LoadThumbnailAsync(item);
+            ViewModel.LoadThumbnailAsync(item);
+    }
+
+    // GridView recycles containers, so a recycled tile gets a new DataContext without a new Loaded event.
+    private void MediaTile_DataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        if (sender.DataContext is MediaItem item)
+            ViewModel.LoadThumbnailAsync(item);
     }
 
     private async void OpenMediaClick(object sender, RoutedEventArgs e)
@@ -89,4 +97,5 @@ public sealed partial class GalleryPage : Page
         if (await dialog.ShowAsync() is ContentDialogResult.Primary)
             await ViewModel.DeleteAsync(item);
     }
+
 }
