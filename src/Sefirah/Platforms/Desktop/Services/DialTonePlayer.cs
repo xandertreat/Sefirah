@@ -28,13 +28,18 @@ public static class DialTonePlayer
     private const int SampleRate = 8000;
     private const int Milliseconds = 90;
     private static string? playerPath;
+    private static bool playerPathResolved; // null result is cached too, so a missing player is not re-searched per key
 
     public static void Play(char key)
     {
         if (!OperatingSystem.IsLinux() || !Frequencies.TryGetValue(key, out var tone))
             return;
 
-        playerPath ??= FindPlayer();
+        if (!playerPathResolved)
+        {
+            playerPath = FindPlayer();
+            playerPathResolved = true;
+        }
         if (playerPath is null)
             return;
 
@@ -73,7 +78,9 @@ public static class DialTonePlayer
         var count = SampleRate * Milliseconds / 1000;
         var ramp = SampleRate / 200; // 5ms, keeps the edges click-free
 
-        using var stream = new FileStream(file, FileMode.Create, FileAccess.Write);
+        // Write to a temp file and move atomically, so a player never sees a truncated WAV.
+        var temp = file + ".tmp";
+        using var stream = new FileStream(temp, FileMode.Create, FileAccess.Write);
         using var writer = new BinaryWriter(stream);
 
         writer.Write(Encoding.ASCII.GetBytes("RIFF"));
@@ -99,6 +106,7 @@ public static class DialTonePlayer
             writer.Write((short)(sample * short.MaxValue));
         }
 
+        File.Move(temp, file, overwrite: true);
         return file;
     }
 }

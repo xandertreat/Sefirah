@@ -122,13 +122,11 @@ public class CallFeature(
                 {
                     var callerContact = await GetContactAsync(call);
                     newSession = new CallSessionViewModel(call, callerContact);
-                    PrimaryCall = newSession;
                 }
                 else if (SecondaryCall is null)
                 {
                     var callerContact = await GetContactAsync(call);
                     newSession = new CallSessionViewModel(call, callerContact);
-                    SecondaryCall = newSession;
                 }
                 else
                 {
@@ -137,7 +135,21 @@ public class CallFeature(
                     return;
                 }
 
+                // The constructor's RefreshStatus fires SessionEnded synchronously for an already
+                // Ended/Lost call, so subscribe before checking status and never slot a dead session.
                 newSession.SessionEnded += OnSessionEnded;
+
+                if (call.Status is CallingPhoneCallStatus.Ended or CallingPhoneCallStatus.Lost)
+                {
+                    newSession.SessionEnded -= OnSessionEnded;
+                    newSession.Dispose();
+                    return;
+                }
+
+                if (PrimaryCall is null)
+                    PrimaryCall = newSession;
+                else
+                    SecondaryCall = newSession;
 
                 // Keep the currently active (non-held) call in the primary slot.
                 // When a second call arrives and becomes active, promote it to primary.

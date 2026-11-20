@@ -294,10 +294,24 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     private void AppendDialKey(string? key)
     {
         if (string.IsNullOrEmpty(key)) return;
-        DialTonePlayer.Play(key[0]);
+        DialTonePlayer.Play(ToneKey(key[0]));
         ClearDialContactVisual();
         PhoneNumber += key;
     }
+
+    // DTMF letters share their key's tone; anything that is already a key plays itself.
+    private static char ToneKey(char c) => char.ToUpperInvariant(c) switch
+    {
+        >= 'A' and <= 'C' => '2',
+        >= 'D' and <= 'F' => '3',
+        >= 'G' and <= 'I' => '4',
+        >= 'J' and <= 'L' => '5',
+        >= 'M' and <= 'O' => '6',
+        >= 'P' and <= 'S' => '7',
+        >= 'T' and <= 'V' => '8',
+        >= 'W' and <= 'Z' => '9',
+        _ => c,
+    };
 
     [RelayCommand]
     private void RemoveLastDialDigit()

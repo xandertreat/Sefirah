@@ -41,11 +41,28 @@ public sealed partial class CallsPage : Page
         {
             UpdatePaneLayout();
             HookWindowKeys(true);
-            if (XamlRoot?.Content is UIElement rootContent)
-                rootContent.AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
+            if (rootContent is null && XamlRoot?.Content is UIElement root)
+            {
+                rootContent = root;
+                rootPointerPressedHandler = new PointerEventHandler(OnRootPointerPressed);
+                rootContent.AddHandler(PointerPressedEvent, rootPointerPressedHandler, true);
+            }
         };
-        Unloaded += (_, _) => HookWindowKeys(false);
+        Unloaded += (_, _) =>
+        {
+            HookWindowKeys(false);
+            // The page is recreated per navigation; without this the window root keeps it alive.
+            if (rootContent is not null && rootPointerPressedHandler is not null)
+            {
+                rootContent.RemoveHandler(PointerPressedEvent, rootPointerPressedHandler);
+                rootContent = null;
+                rootPointerPressedHandler = null;
+            }
+        };
     }
+
+    private UIElement? rootContent;
+    private PointerEventHandler? rootPointerPressedHandler;
 
     private const double TwoPaneMinWidth = 900;
     private bool _showDialer;
@@ -304,6 +321,7 @@ public sealed partial class CallsPage : Page
     }
 
     private Popup? characterPopup;
+    private Button? characterPopupOwner;
     private int cardAnimation;
     private readonly ILogger Logger = Ioc.Default.GetRequiredService<ILogger<CallsPage>>();
 
@@ -333,7 +351,7 @@ public sealed partial class CallsPage : Page
             };
             cube.Click += (_, _) =>
             {
-                DialTonePlayer.Play(key[0]); // the tone follows the key, not the letter
+                // AppendDialKey plays the key's tone once; no extra Play here.
                 ViewModel.AppendDialKeyCommand.Execute(character.ToString());
                 HideCharacters(animate: true);
             };
@@ -361,7 +379,8 @@ public sealed partial class CallsPage : Page
             HorizontalOffset = Math.Max(8, origin.X + ((button.ActualWidth - card.DesiredSize.Width) / 2)),
             VerticalOffset = Math.Max(8, origin.Y - card.DesiredSize.Height - 10),
         };
-        characterPopup.Closed += (_, _) => characterPopup = null;
+        characterPopupOwner = button;
+        characterPopup.Closed += (_, _) => { characterPopup = null; characterPopupOwner = null; };
 
         Logger.LogInformation("Character menu for {Key}: {Width}x{Height} cubes at {X},{Y}",
             key, card.DesiredSize.Width, card.DesiredSize.Height, origin.X, origin.Y);
@@ -389,6 +408,7 @@ public sealed partial class CallsPage : Page
             return;
 
         characterPopup = null;
+        characterPopupOwner = null;
         if (!animate || popup.Child is not Border card)
         {
             popup.IsOpen = false;
@@ -446,7 +466,11 @@ public sealed partial class CallsPage : Page
         if (characterPopup is not { Child: Border card } popup)
             return;
 
-        if (e.OriginalSource is DependencyObject source && IsInside(source, card))
+        // A press on the owning key opened the popup and bubbles here afterwards; don't close
+        // the popup it just opened.
+        var owner = characterPopupOwner;
+        if (e.OriginalSource is DependencyObject source &&
+            (IsInside(source, card) || (owner is not null && IsInside(source, owner))))
             return;
 
         Logger.LogInformation("Character menu dismissed by outside press");
