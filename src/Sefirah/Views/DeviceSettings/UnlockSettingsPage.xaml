@@ -22,11 +22,13 @@
                             Padding="4"
                             VerticalAlignment="Center"
                             Background="Transparent"
-                            BorderThickness="0">
+                            BorderThickness="0"
+                            AutomationProperties.Name="{helpers:ResourceString Name=PasswordCacheTimeout}">
                             <FontIcon
                                 FontSize="14"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Glyph="&#xE946;" />
+                                Glyph="&#xE946;"
+                                AutomationProperties.AccessibilityView="Raw" />
                             <Button.Flyout>
                                 <Flyout>
                                     <StackPanel MaxWidth="350" Spacing="5">
@@ -64,11 +66,13 @@
                             Padding="4"
                             VerticalAlignment="Center"
                             Background="Transparent"
-                            BorderThickness="0">
+                            BorderThickness="0"
+                            AutomationProperties.Name="{helpers:ResourceString Name=UnlockCommandsHeader}">
                             <FontIcon
                                 FontSize="14"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Glyph="&#xE946;" />
+                                Glyph="&#xE946;"
+                                AutomationProperties.AccessibilityView="Raw" />
                             <Button.Flyout>
                                 <Flyout>
                                     <StackPanel MaxWidth="350" Spacing="5">
@@ -169,8 +173,9 @@
                                             Background="Transparent"
                                             BorderBrush="Transparent"
                                             Command="{Binding DataContext.RemoveUnlockCommandCommand, ElementName=PageRoot}"
-                                            CommandParameter="{x:Bind}">
-                                            <FontIcon FontSize="14" Glyph="&#xE894;" />
+                                            CommandParameter="{x:Bind}"
+                                            AutomationProperties.Name="{helpers:ResourceString Name=Remove}">
+                                            <FontIcon FontSize="14" Glyph="&#xE894;" AutomationProperties.AccessibilityView="Raw" />
                                         </Button>
                                     </Grid>
                                 </DataTemplate>

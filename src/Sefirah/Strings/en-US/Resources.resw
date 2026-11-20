@@ -409,6 +409,9 @@ page.</value>
   <data name="CopyMessage" xml:space="preserve">
     <value>Copy message</value>
   </data>
+  <data name="CopyVersionInfo" xml:space="preserve">
+    <value>Copy version</value>
+  </data>
   <data name="NoApps" xml:space="preserve">
     <value>No apps found</value>
   </data>

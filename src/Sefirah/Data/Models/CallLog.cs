@@ -83,4 +83,7 @@ public partial class CallLog(Contact callContact) : ObservableObject
     };
 
     public string CallTypeDetail => HasCallTypeIcon ? FormattedDuration : CallTypeAndDuration;
+
+    // Screen readers read this as the list item's name.
+    public override string ToString() => $"{CallContact.DisplayName}, {CallTypeName}";
 }

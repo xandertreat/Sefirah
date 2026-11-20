@@ -87,4 +87,7 @@ public partial class Conversation : ObservableObject
         OnPropertyChanged(nameof(ShowContactInitials));
         OnPropertyChanged(nameof(ShowContactGlyph));
     }
+
+    // Screen readers read this as the list item's name.
+    public override string ToString() => DisplayName ?? string.Empty;
 }

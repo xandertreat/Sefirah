@@ -61,11 +61,13 @@
                                         Padding="4"
                                         VerticalAlignment="Center"
                                         Background="Transparent"
-                                        BorderThickness="0">
+                                        BorderThickness="0"
+                                        AutomationProperties.Name="{helpers:ResourceString Name=ScrcpyClipboardAutosync}">
                                         <FontIcon
                                             FontSize="14"
                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                            Glyph="&#xE946;" />
+                                            Glyph="&#xE946;"
+                                            AutomationProperties.AccessibilityView="Raw" />
                                         <Button.Flyout>
                                             <Flyout>
                                                 <TextBlock

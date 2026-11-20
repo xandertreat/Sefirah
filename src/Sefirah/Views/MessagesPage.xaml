@@ -378,7 +378,7 @@
                     AutomationProperties.Name="{helpers:ResourceString Name=NewMessage}"
                     Click="NewMessageButton_Click"
                     ToolTipService.ToolTip="{helpers:ResourceString Name=NewMessage}">
-                    <FontIcon FontSize="16" Glyph="&#xE932;" />
+                    <FontIcon FontSize="16" Glyph="&#xE932;" AutomationProperties.AccessibilityView="Raw" />
                 </Button>
             </Grid>
 
@@ -472,7 +472,7 @@
                         Click="ConversationBackButton_Click"
                         AutomationProperties.Name="{helpers:ResourceString Name=Back}"
                         ToolTipService.ToolTip="{helpers:ResourceString Name=Back}">
-                        <FontIcon FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76B;" />
+                        <FontIcon FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76B;" AutomationProperties.AccessibilityView="Raw" />
                     </Button>
 
                     <Grid
@@ -578,8 +578,9 @@
                                                 Click="RemoveAddressButton_Click"
                                                 CornerRadius="12"
                                                 Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="{helpers:ResourceString Name=RemoveAddress}">
-                                                <FontIcon FontSize="10" Glyph="&#xE711;" />
+                                                ToolTipService.ToolTip="{helpers:ResourceString Name=RemoveAddress}"
+                                                AutomationProperties.Name="{helpers:ResourceString Name=RemoveAddress}">
+                                                <FontIcon FontSize="10" Glyph="&#xE711;" AutomationProperties.AccessibilityView="Raw" />
                                             </Button>
                                         </Grid>
                                     </Border>
@@ -928,8 +929,9 @@
                                         Click="RemoveStagedAttachment_Click"
                                         Style="{ThemeResource AccentButtonStyle}"
                                         Tag="{x:Bind}"
-                                        ToolTipService.ToolTip="{helpers:ResourceString Name=RemoveAttachment}">
-                                        <FontIcon FontSize="10" Glyph="&#xE711;" />
+                                        ToolTipService.ToolTip="{helpers:ResourceString Name=RemoveAttachment}"
+                                        AutomationProperties.Name="{helpers:ResourceString Name=RemoveAttachment}">
+                                        <FontIcon FontSize="10" Glyph="&#xE711;" AutomationProperties.AccessibilityView="Raw" />
                                     </Button>
                                 </Grid>
                             </DataTemplate>

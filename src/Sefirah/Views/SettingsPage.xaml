@@ -44,7 +44,7 @@
                 Tag="DevicesPage" />
             <NavigationViewItem Content="{helpers:ResourceString Name=About}" Tag="AboutPage">
                 <NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE946;" />
+                    <FontIcon Glyph="&#xE946;" AutomationProperties.AccessibilityView="Raw" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
         </NavigationView.MenuItems>
