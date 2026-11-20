@@ -387,25 +387,43 @@
                         <Button
                             Grid.Column="1"
                             Click="DialButton_Click"
-                            Width="48"
-                            Height="48"
-                            CornerRadius="24"
+                            Width="56"
+                            Height="56"
+                            Padding="0"
+                            CornerRadius="28"
                             HorizontalAlignment="Center"
-                            Background="#2E9E57"
-                            BorderBrush="#2E9E57"
+                            AutomationProperties.Name="{helpers:ResourceString Name=AudioCall}"
+                            ToolTipService.ToolTip="{helpers:ResourceString Name=AudioCall}"
                             IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
-                            <FontIcon Glyph="&#xE717;" FontSize="20" Foreground="White"/>
+                            <Button.Resources>
+                                <SolidColorBrush x:Key="ButtonBackground" Color="#2E9E57" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#38AE64" />
+                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#26894A" />
+                                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#662E9E57" />
+                                <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+                                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+                                <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
+                                <SolidColorBrush x:Key="ButtonForeground" Color="White" />
+                                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+                                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#E6FFFFFF" />
+                                <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#99FFFFFF" />
+                            </Button.Resources>
+                            <FontIcon Glyph="&#xE717;" FontSize="22" />
                         </Button>
                         <RepeatButton
                             Grid.Column="2"
-                            Width="48"
-                            Height="48"
-                            CornerRadius="24"
+                            Width="56"
+                            Height="56"
+                            Padding="0"
+                            CornerRadius="28"
                             HorizontalAlignment="Center"
                             Delay="400"
                             Click="RepeatBackspaceButton_Click"
+                            AutomationProperties.Name="{helpers:ResourceString Name=DialerBackspace}"
+                            ToolTipService.ToolTip="{helpers:ResourceString Name=DialerBackspace}"
                             Visibility="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource StringVisibilityConverter}}">
-                            <FontIcon Glyph="&#xE94F;" FontSize="16"/>
+                            <FontIcon Glyph="&#xE94F;" FontSize="18" />
                         </RepeatButton>
                     </Grid>
                 </StackPanel>

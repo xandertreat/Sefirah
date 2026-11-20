@@ -1088,4 +1088,7 @@ input text %pwd%</value>
   <data name="Dialer" xml:space="preserve">
     <value>Dialer</value>
   </data>
+  <data name="DialerBackspace" xml:space="preserve">
+    <value>Delete digit</value>
+  </data>
 </root>
