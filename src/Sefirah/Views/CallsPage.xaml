@@ -124,6 +124,12 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="models:CallLog">
                             <Grid Padding="4,8">
+                                <Border
+                                    Grid.ColumnSpan="3"
+                                    Margin="-4,-8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
@@ -166,11 +172,17 @@
                                     <Button
                                         Width="36"
                                         Height="36"
+                                        Padding="0"
                                         CornerRadius="18"
                                         Click="CallLogItemCallButton_Click"
                                         Tag="{x:Bind}"
+                                        AutomationProperties.Name="{helpers:ResourceString Name=AudioCall}"
+                                        ToolTipService.ToolTip="{helpers:ResourceString Name=AudioCall}"
                                         Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <FontIcon Glyph="&#xE717;" FontSize="14"/>
+                                        <Button.Resources>
+                                            <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
+                                        </Button.Resources>
+                                        <FontIcon Glyph="&#xE717;" FontSize="16" />
                                     </Button>
                                 </StackPanel>
                             </Grid>
@@ -396,18 +408,7 @@
                             ToolTipService.ToolTip="{helpers:ResourceString Name=AudioCall}"
                             IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
                             <Button.Resources>
-                                <SolidColorBrush x:Key="ButtonBackground" Color="#2E9E57" />
-                                <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#38AE64" />
-                                <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#26894A" />
-                                <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#662E9E57" />
-                                <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
-                                <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
-                                <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
-                                <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
-                                <SolidColorBrush x:Key="ButtonForeground" Color="White" />
-                                <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
-                                <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#E6FFFFFF" />
-                                <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#99FFFFFF" />
+                                <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
                             </Button.Resources>
                             <FontIcon Glyph="&#xE717;" FontSize="22" />
                         </Button>
