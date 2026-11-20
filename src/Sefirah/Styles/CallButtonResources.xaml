@@ -1,0 +1,17 @@
+<!--  Green fill for buttons that place a call. Merge into a button's Resources so only that button is affected.  -->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="ButtonBackground" Color="#2E9E57" />
+    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#38AE64" />
+    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#26894A" />
+    <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#662E9E57" />
+    <SolidColorBrush x:Key="ButtonBorderBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+    <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="Transparent" />
+    <SolidColorBrush x:Key="ButtonForeground" Color="White" />
+    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#E6FFFFFF" />
+    <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#99FFFFFF" />
+</ResourceDictionary>

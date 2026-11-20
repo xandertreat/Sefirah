@@ -124,6 +124,12 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="models:CallLog">
                             <Grid Padding="4,8">
+                                <Border
+                                    Grid.ColumnSpan="3"
+                                    Margin="-4,-8"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                    Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
@@ -192,11 +198,17 @@
                                     <Button
                                         Width="36"
                                         Height="36"
+                                        Padding="0"
                                         CornerRadius="18"
                                         Click="CallLogItemCallButton_Click"
                                         Tag="{x:Bind}"
+                                        AutomationProperties.Name="{helpers:ResourceString Name=AudioCall}"
+                                        ToolTipService.ToolTip="{helpers:ResourceString Name=AudioCall}"
                                         Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                        <FontIcon Glyph="&#xE717;" FontSize="14"/>
+                                        <Button.Resources>
+                                            <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
+                                        </Button.Resources>
+                                        <FontIcon Glyph="&#xE717;" FontSize="16" />
                                     </Button>
                                 </StackPanel>
                             </Grid>
@@ -413,25 +425,32 @@
                         <Button
                             Grid.Column="1"
                             Click="DialButton_Click"
-                            Width="48"
-                            Height="48"
-                            CornerRadius="24"
+                            Width="56"
+                            Height="56"
+                            Padding="0"
+                            CornerRadius="28"
                             HorizontalAlignment="Center"
-                            Background="#2E9E57"
-                            BorderBrush="#2E9E57"
+                            AutomationProperties.Name="{helpers:ResourceString Name=AudioCall}"
+                            ToolTipService.ToolTip="{helpers:ResourceString Name=AudioCall}"
                             IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
-                            <FontIcon Glyph="&#xE717;" FontSize="20" Foreground="White"/>
+                            <Button.Resources>
+                                <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
+                            </Button.Resources>
+                            <FontIcon Glyph="&#xE717;" FontSize="22" />
                         </Button>
                         <RepeatButton
                             Grid.Column="2"
-                            Width="48"
-                            Height="48"
-                            CornerRadius="24"
+                            Width="56"
+                            Height="56"
+                            Padding="0"
+                            CornerRadius="28"
                             HorizontalAlignment="Center"
                             Delay="400"
                             Click="RepeatBackspaceButton_Click"
+                            AutomationProperties.Name="{helpers:ResourceString Name=DialerBackspace}"
+                            ToolTipService.ToolTip="{helpers:ResourceString Name=DialerBackspace}"
                             Visibility="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource StringVisibilityConverter}}">
-                            <FontIcon Glyph="&#xE94F;" FontSize="16"/>
+                            <FontIcon Glyph="&#xE94F;" FontSize="18" />
                         </RepeatButton>
                     </Grid>
                 </StackPanel>

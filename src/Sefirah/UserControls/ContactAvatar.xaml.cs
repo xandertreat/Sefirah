@@ -101,7 +101,7 @@ public sealed partial class ContactAvatar : UserControl
         PhotoBorder.CornerRadius = cornerRadius;
 
         var iconSize = Math.Max(12, ActualHeight * 0.45);
-        var initialsSize = Math.Max(10, ActualHeight * 0.35);
+        var initialsSize = Math.Max(10, ActualHeight * 0.46);
         GroupGlyphIcon.FontSize = iconSize;
         PersonGlyphIcon.FontSize = iconSize;
         InitialsText.FontSize = initialsSize;
@@ -190,14 +190,42 @@ public sealed partial class ContactAvatar : UserControl
         var baseColor = hasColor ? PlaceholderColorHex.ToColor() : default;
         PlaceholderBorder.Background = hasColor ? CreateGradient(baseColor) : null;
 
-        // Off-white everywhere: the soft palette carries it without the harshness of pure white.
-        var foreground = hasColor ? new SolidColorBrush(PlaceholderForeground) : null;
+        var foreground = hasColor ? new SolidColorBrush(PlaceholderForeground(baseColor)) : null;
         InitialsText.Foreground = foreground;
         PersonGlyphIcon.Foreground = foreground;
         GroupGlyphIcon.Foreground = foreground;
     }
 
-    private static readonly Color PlaceholderForeground = Color.FromArgb(255, 0xF7, 0xF3, 0xEE);
+    private const double DarkStop = 0.74;
+
+    // Start from the gradient's dark stop and keep darkening until it reads against the middle of the gradient.
+    private static Color PlaceholderForeground(Color color)
+    {
+        var factor = DarkStop;
+        var shade = Shade(color, factor);
+        while (factor > 0 && ContrastRatio(shade, color) < 4.5)
+        {
+            factor -= 0.04;
+            shade = Shade(color, Math.Max(factor, 0));
+        }
+        return shade;
+    }
+
+    private static double ContrastRatio(Color a, Color b)
+    {
+        double la = Luminance(a), lb = Luminance(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
+    private static double Luminance(Color c)
+    {
+        static double Channel(byte v)
+        {
+            var s = v / 255.0;
+            return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * Channel(c.R) + 0.7152 * Channel(c.G) + 0.0722 * Channel(c.B);
+    }
 
     // A two stop gradient of the contact colour reads as a designed avatar rather than a flat swatch.
     private static LinearGradientBrush CreateGradient(Color color) => new()
@@ -207,7 +235,7 @@ public sealed partial class ContactAvatar : UserControl
         GradientStops =
         {
             new GradientStop { Color = Shade(color, 1.22), Offset = 0 },
-            new GradientStop { Color = Shade(color, 0.74), Offset = 1 }
+            new GradientStop { Color = Shade(color, DarkStop), Offset = 1 }
         }
     };
 
