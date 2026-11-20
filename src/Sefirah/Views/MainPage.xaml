@@ -394,6 +394,7 @@
                             x:Name="AppsNavigationItem"
                             Content="{helpers:ResourceString Name=Apps}"
                             Tag="Apps"
+                            IsEnabled="{x:Bind ViewModel.Device.HasAdbConnection, Mode=OneWay, FallbackValue=False}"
                             Visibility="{x:Bind ViewModel.Device, Converter={StaticResource EmptyObjectToVisibilityConverter}, Mode=OneWay}">
                             <NavigationViewItem.Icon>
                                 <FontIcon Glyph="&#xED35;" />
