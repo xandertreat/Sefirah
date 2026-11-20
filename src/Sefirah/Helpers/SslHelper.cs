@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography;
@@ -12,10 +11,9 @@ namespace Sefirah.Helpers;
 /// </summary>
 public static class SslHelper
 {
-    private static readonly TimeSpan StashTtl = TimeSpan.FromSeconds(30);
-
-    private static readonly ConcurrentDictionary<string, ConcurrentQueue<(byte[] Cert, long Ticks)>> CertByPublicKey = new();
-    private static readonly Timer StashCleanupTimer = new(_ => PurgeExpiredStash(), null, Timeout.Infinite, Timeout.Infinite);
+    // NetCoreServer keeps the session's SslStream private; read it so the cert is tied to this session.
+    private static readonly System.Reflection.FieldInfo? SessionStreamField = typeof(SslSession).GetField("_sslStream", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+    private static readonly System.Reflection.FieldInfo? ClientStreamField = typeof(SslClient).GetField("_sslStream", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
     public static byte[] DevicePublicKeyEncoded => _devicePublicKeyEncoded ??= GetPublicKeyEncoded(GetOrCreateCertificate());
     private static byte[]? _devicePublicKeyEncoded;
@@ -69,40 +67,32 @@ public static class SslHelper
         return hex.ToString().ToUpperInvariant();
     }
 
-    public static byte[]? GetCertForPublicKey(string? publicKeyString)
+    /// <summary>Returns the raw cert this connection's peer presented in its TLS handshake, only if its public key equals <paramref name="claimedPublicKey"/>.</summary>
+    public static byte[]? GetPeerCertificate(SslSession session, string? claimedPublicKey) => GetPeerCertificate(SessionStreamField?.GetValue(session), claimedPublicKey);
+
+    public static byte[]? GetPeerCertificate(SslClient client, string? claimedPublicKey) => GetPeerCertificate(ClientStreamField?.GetValue(client), claimedPublicKey);
+
+    private static byte[]? GetPeerCertificate(object? stream, string? claimedPublicKey)
     {
-        if (string.IsNullOrEmpty(publicKeyString) || !CertByPublicKey.TryGetValue(publicKeyString, out var queue))
-            return null;
-
-        if (!queue.TryDequeue(out var entry))
-        {
-            CertByPublicKey.TryRemove(publicKeyString, out _);
-            return null;
-        }
-
-        if (queue.IsEmpty)
-            CertByPublicKey.TryRemove(publicKeyString, out _);
-
-        return entry.Cert;
-    }
-
-    private static void PurgeExpiredStash()
-    {
-        var now = Environment.TickCount64;
-        foreach (var (key, queue) in CertByPublicKey)
-        {
-            while (queue.TryPeek(out var entry) && now - entry.Ticks > StashTtl.TotalMilliseconds)
-                queue.TryDequeue(out _);
-
-            if (queue.IsEmpty)
-                CertByPublicKey.TryRemove(key, out _);
-        }
-
-        if (CertByPublicKey.IsEmpty)
-            StashCleanupTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        if (string.IsNullOrEmpty(claimedPublicKey) || stream is not SslStream { RemoteCertificate: { } remote }) return null;
+        using var c = new X509Certificate2(remote);
+        return GetPublicKeyStringBase64(GetPublicKeyEncoded(c)) == claimedPublicKey ? c.RawData : null;
     }
 
     private static string CertificateFileName { get; } = "Sefirah.pfx";
+
+    private static void RestrictToOwner(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to restrict permissions: {ex.Message}");
+        }
+    }
 
     private static X509Certificate2 CreateECDSACertificate()
     {
@@ -128,7 +118,9 @@ public static class SslHelper
 
         string certPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, CertificateFileName);
 
-        File.WriteAllBytes(certPath, exportedData);
+        using (var fs = new FileStream(certPath, new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite }))
+            fs.Write(exportedData);
+        RestrictToOwner(certPath);
 
         return certificate;
     }
@@ -141,6 +133,7 @@ public static class SslHelper
         {
             try
             {
+                RestrictToOwner(certPath);
                 return X509CertificateLoader.LoadPkcs12FromFile(certPath, null);
             }
             catch (Exception ex)
@@ -154,7 +147,7 @@ public static class SslHelper
 
     public static SslContext GetSslContext()
     {
-        return new SslContext(SslProtocols.Tls12 | SslProtocols.Tls13, GetOrCreateCertificate(), StashCertAndAccept)
+        return new SslContext(SslProtocols.Tls12 | SslProtocols.Tls13, GetOrCreateCertificate(), AcceptAnyCertificate)
         {
             ClientCertificateRequired = true
         };
@@ -177,14 +170,6 @@ public static class SslHelper
         }
     }
 
-    private static bool StashCertAndAccept(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors)
-    {
-        if (cert is null) return false;
-        using var c = new X509Certificate2(cert);
-        var publicKeyString = GetPublicKeyStringBase64(GetPublicKeyEncoded(c));
-        var queue = CertByPublicKey.GetOrAdd(publicKeyString, _ => new ConcurrentQueue<(byte[], long)>());
-        queue.Enqueue((cert.GetRawCertData(), Environment.TickCount64));
-        StashCleanupTimer.Change(StashTtl, StashTtl);
-        return true;
-    }
+    /// <summary>Accepts any peer cert; callers authorize it afterwards against the connection's own cert.</summary>
+    private static bool AcceptAnyCertificate(object sender, X509Certificate? cert, X509Chain? chain, SslPolicyErrors errors) => cert is not null;
 }

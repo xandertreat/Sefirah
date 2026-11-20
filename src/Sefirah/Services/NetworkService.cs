@@ -31,6 +31,19 @@ public class NetworkService(
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> handshakeCompletion = [];
     private readonly ConcurrentDictionary<string, CancellationTokenSource> connectionCancellationTokens = [];
 
+    private const int MaxUnauthenticatedBufferChars = 64 * 1024;
+    private const int MaxAuthenticatedBufferChars = 4 * 1024 * 1024;
+    private static readonly TimeSpan AuthTimeout = TimeSpan.FromSeconds(30);
+    private const int MaxPairRequestsPerMinute = 3;
+
+    private readonly Dictionary<string, PairRateState> pairRates = [];
+
+    private sealed class PairRateState
+    {
+        public int Pending;
+        public Queue<long> Requests { get; } = new();
+    }
+
     private sealed class DeviceAuth
     {
         public ConcurrentQueue<SocketMessage> Deferred { get; } = new();
@@ -162,6 +175,24 @@ public class NetworkService(
     /// <summary>
     /// Extracts complete newline-delimited messages from the buffer, deserializes them, removes from buffer, returns list.
     /// </summary>
+    private bool IsKnownConnection(Guid id) =>
+        PairedDevices.Any(d => d.Client?.Id == id || d.Session?.Id == id) ||
+        DiscoveredDevices.Any(d => d.Client?.Id == id || d.Session?.Id == id);
+
+    /// <summary>Appends received data and extracts complete messages; returns null if the buffer exceeds its cap.</summary>
+    private List<SocketMessage>? ReadMessages(Guid id, byte[] buffer, long offset, long size)
+    {
+        var sb = connectionBuffers.GetOrAdd(id, _ => new StringBuilder());
+        var text = Encoding.UTF8.GetString(buffer, (int)offset, (int)size);
+        sb.Append(text);
+
+        // Only scan when this chunk can complete a message, so newline-free floods cost nothing.
+        var messages = text.Contains('\n') ? GetMessagesFromBuffer(sb, logger) : [];
+
+        var cap = IsKnownConnection(id) ? MaxAuthenticatedBufferChars : MaxUnauthenticatedBufferChars;
+        return sb.Length > cap ? null : messages;
+    }
+
     private static List<SocketMessage> GetMessagesFromBuffer(StringBuilder sb, ILogger logger)
     {
         List<SocketMessage> messages = [];
@@ -213,6 +244,17 @@ public class NetworkService(
     {
         logger.Debug($"New session connected: {session.Id}");
         connectionBuffers[session.Id] = new StringBuilder();
+        _ = DisconnectIfUnauthenticatedAsync(session);
+    }
+
+    private async Task DisconnectIfUnauthenticatedAsync(ServerSession session)
+    {
+        await Task.Delay(AuthTimeout);
+        if (connectionBuffers.ContainsKey(session.Id) && !IsKnownConnection(session.Id))
+        {
+            logger.Warn($"Session {session.Id} did not authenticate in time; disconnecting");
+            DisconnectSession(session);
+        }
     }
 
     public void OnDisconnected(ServerSession session)
@@ -232,10 +274,15 @@ public class NetworkService(
     {
         try
         {
-            var sb = connectionBuffers.GetOrAdd(session.Id, _ => new StringBuilder());
-            sb.Append(Encoding.UTF8.GetString(buffer, (int)offset, (int)size));
+            var messages = ReadMessages(session.Id, buffer, offset, size);
+            if (messages is null)
+            {
+                logger.Warn($"Receive buffer limit exceeded for session {session.Id}; disconnecting");
+                DisconnectSession(session);
+                return;
+            }
 
-            foreach (var socketMessage in GetMessagesFromBuffer(sb, logger))
+            foreach (var socketMessage in messages)
             {
                 if (socketMessage is Authentication authMessage)
                 {
@@ -354,8 +401,8 @@ public class NetworkService(
             var address = ip.ToString();
             logger.Info($"Received connection from {address}");
 
-            // Server-side cert-based auth: connecting client sends PublicKey; we look up the stashed cert
-            var cert = SslHelper.GetCertForPublicKey(authMessage.PublicKey);
+            // Server-side cert-based auth: the cert this session presented must match the PublicKey it claims
+            var cert = SslHelper.GetPeerCertificate(session, authMessage.PublicKey);
             if (cert is null || cert.Length == 0)
             {
                 logger.Warn($"No client certificate or PublicKey mismatch; rejecting connection");
@@ -455,6 +502,13 @@ public class NetworkService(
     {
         logger.Info($"Received pairing request from {device.Name}");
 
+        if (!TryBeginPairRequest(device.Address))
+        {
+            logger.Warn($"Pairing request from {device.Address} rate limited");
+            device.SendMessage(new PairMessage { Pair = false });
+            return;
+        }
+
         var tcs = new TaskCompletionSource<bool>();
         await App.MainWindow.DispatcherQueue.EnqueueAsync(async () =>
         {
@@ -477,12 +531,43 @@ public class NetworkService(
         });
 
         var accepted = await tcs.Task;
+        EndPairRequest(device.Address);
 
         device.SendMessage(new PairMessage { Pair = accepted });
         if (accepted)
         {
             var pairedDevice = await deviceManager.AddDevice(device);
             ConnectionStatusChanged?.Invoke(this, pairedDevice);
+        }
+    }
+
+    /// <summary>Allows one pending pairing dialog per IP and a few requests per minute.</summary>
+    private bool TryBeginPairRequest(string address)
+    {
+        lock (pairRates)
+        {
+            if (!pairRates.TryGetValue(address, out var state))
+                pairRates[address] = state = new PairRateState();
+
+            var now = Environment.TickCount64;
+            while (state.Requests.TryPeek(out var t) && now - t > 60_000)
+                state.Requests.Dequeue();
+
+            if (state.Pending > 0 || state.Requests.Count >= MaxPairRequestsPerMinute)
+                return false;
+
+            state.Pending++;
+            state.Requests.Enqueue(now);
+            return true;
+        }
+    }
+
+    private void EndPairRequest(string address)
+    {
+        lock (pairRates)
+        {
+            if (pairRates.TryGetValue(address, out var state))
+                state.Pending = Math.Max(0, state.Pending - 1);
         }
     }
 
@@ -588,8 +673,8 @@ public class NetworkService(
             if (existingDevice.IsConnectedOrConnecting || existingDevice.IsForcedDisconnect)
                 return;
 
-            existingDevice.Port = port;
-            ConnectCore(existingDevice, [address]);
+            // Port comes from unauthenticated discovery: use it for this attempt only; it is saved after the pinned cert authenticates.
+            ConnectCore(existingDevice, [address], port);
             return;
         }
 
@@ -661,7 +746,7 @@ public class NetworkService(
         ConnectCore(device, [address]);
     }
 
-    private async void ConnectCore(PairedDevice device, IReadOnlyList<string> addresses)
+    private async void ConnectCore(PairedDevice device, IReadOnlyList<string> addresses, int? port = null)
     {
         lock (connectingDeviceIds)
         {
@@ -683,8 +768,9 @@ public class NetworkService(
 
                 var clientContext = SslHelper.CreateSslContext(device.Certificate);
 
-                logger.Info($"Connecting to {address}:{device.Port}");
-                var client = new Client(clientContext, address, device.Port, this);
+                var connectPort = port ?? device.Port;
+                logger.Info($"Connecting to {address}:{connectPort}");
+                var client = new Client(clientContext, address, connectPort, this);
                 var tcs = new TaskCompletionSource<bool>();
                 handshakeCompletion[client.Id] = tcs;
 
@@ -714,7 +800,7 @@ public class NetworkService(
                 }
                 catch (Exception ex)
                 {
-                    logger.Debug($"Failed to connect to {address}:{device.Port}", ex);
+                    logger.Debug($"Failed to connect to {address}:{connectPort}", ex);
                 }
                 finally
                 {
@@ -787,10 +873,15 @@ public class NetworkService(
     {
         try
         {
-            var sb = connectionBuffers.GetOrAdd(client.Id, _ => new StringBuilder());
-            sb.Append(Encoding.UTF8.GetString(buffer, (int)offset, (int)size));
+            var messages = ReadMessages(client.Id, buffer, offset, size);
+            if (messages is null)
+            {
+                logger.Warn($"Receive buffer limit exceeded for client {client.Id}; disconnecting");
+                DisconnectClient(client);
+                return;
+            }
 
-            foreach (var socketMessage in GetMessagesFromBuffer(sb, logger))
+            foreach (var socketMessage in messages)
             {
                 if (socketMessage is Authentication authMessage)
                 {
@@ -849,12 +940,16 @@ public class NetworkService(
             var pairedDevice = PairedDevices.FirstOrDefault(d => d.Id == authMessage.DeviceId);
             if (pairedDevice is not null)
             {
+                var cert = SslHelper.GetPeerCertificate(client, authMessage.PublicKey);
+                if (cert is null || pairedDevice.Certificate.Length == 0 || !cert.AsSpan().SequenceEqual(pairedDevice.Certificate))
+                    throw new Exception("Certificate verification failed for paired device");
+
                 await AuthenticatePairedDeviceServer(client, pairedDevice, address, cancellationToken);
             }
             else
             {
-                // New device: we stashed the server cert during TLS; look it up by PublicKey and store on DiscoveredDevice.
-                var certificate = SslHelper.GetCertForPublicKey(authMessage.PublicKey);
+                // New device: take the server cert this connection presented during TLS and store it on DiscoveredDevice.
+                var certificate = SslHelper.GetPeerCertificate(client, authMessage.PublicKey);
                 if (certificate is null || certificate.Length == 0)
                 {
                     throw new Exception("No server certificate or PublicKey mismatch; rejecting");

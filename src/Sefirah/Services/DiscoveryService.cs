@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Sefirah.Data.AppDatabase.Models;
@@ -93,7 +94,26 @@ public class DiscoveryService(
 
     private void OnDiscoveredMdnsService(object? sender, DiscoveredMdnsServiceArgs e)
     {
+        if (IPAddress.TryParse(e.Address, out var ip) && !IsLocalSource(ip)) return;
         sessionManager.Connect(e.DeviceId, e.Address, e.Port);
+    }
+
+    /// <summary>True if the address is in a local IPv4 subnet of this machine or is a saved address of a paired device.</summary>
+    private bool IsLocalSource(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.AddressFamily is not AddressFamily.InterNetwork) return false;
+
+        var bytes = address.GetAddressBytes();
+        foreach (var local in NetworkHelper.GetAllValidAddresses())
+        {
+            var ip = local.Address.GetAddressBytes();
+            var mask = local.SubnetMask.GetAddressBytes();
+            if (Enumerable.Range(0, 4).All(i => (ip[i] & mask[i]) == (bytes[i] & mask[i])))
+                return true;
+        }
+
+        return deviceManager.GetRemoteDeviceAddresses().Contains(address.ToString());
     }
 
     private async void BroadcastDeviceInfoAsync(UdpBroadcast udpBroadcast)
@@ -124,6 +144,7 @@ public class DiscoveryService(
             if (JsonMessageSerializer.DeserializeMessage(message) is not UdpBroadcast broadcast) return;
 
             if (broadcast.DeviceId == localDevice?.DeviceId || address is null) return;
+            if (!IsLocalSource(address)) return;
 
             sessionManager.Connect(broadcast.DeviceId, address.ToString(), broadcast.Port);
         }
