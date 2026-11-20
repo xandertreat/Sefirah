@@ -32,7 +32,8 @@ public class NetworkService(
     private readonly ConcurrentDictionary<string, CancellationTokenSource> connectionCancellationTokens = [];
 
     private const int MaxUnauthenticatedBufferChars = 64 * 1024;
-    private const int MaxAuthenticatedBufferChars = 4 * 1024 * 1024;
+    // Large enough for an inline base64 MMS photo (~4/3 × file size); still bounded.
+    private const int MaxAuthenticatedBufferChars = 32 * 1024 * 1024;
     private static readonly TimeSpan AuthTimeout = TimeSpan.FromSeconds(30);
     private const int MaxPairRequestsPerMinute = 3;
 
