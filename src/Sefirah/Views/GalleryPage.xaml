@@ -58,11 +58,13 @@
                             x:Name="Placeholder"
                             FontSize="28"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Glyph="{x:Bind VideoGlyph}" />
+                            Glyph="{x:Bind VideoGlyph}"
+                            AutomationProperties.AccessibilityView="Raw" />
                         <Image
                             Source="{x:Bind Thumbnail, Mode=OneWay}"
                             Stretch="UniformToFill"
-                            Visibility="{x:Bind Thumbnail, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}" />
+                            Visibility="{x:Bind Thumbnail, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}"
+                            AutomationProperties.AccessibilityView="Raw" />
                     </Grid>
                 </Border>
 
@@ -75,8 +77,21 @@
                     Background="{ThemeResource AccentFillColorDefaultBrush}"
                     CornerRadius="4"
                     Visibility="{x:Bind IsVideo, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <FontIcon FontSize="12" Foreground="White" Glyph="&#xE768;" />
+                    <FontIcon FontSize="12" Foreground="White" Glyph="&#xE768;" AutomationProperties.AccessibilityView="Raw" />
                 </Border>
+
+                <!-- Keyboard/AT path to the same menu the pointer opens with a right tap -->
+                <Button
+                    Margin="4"
+                    Padding="4"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                    BorderThickness="0"
+                    Click="MoreOptionsClick"
+                    AutomationProperties.Name="{helpers:ResourceString Name=TileMoreOptions}">
+                    <FontIcon FontSize="14" Glyph="&#xE712;" AutomationProperties.AccessibilityView="Raw" />
+                </Button>
             </Grid>
         </DataTemplate>
     </Page.Resources>
@@ -158,6 +173,7 @@
                 x:Name="MediaGrid"
                 AutomationProperties.Name="{helpers:ResourceString Name=Gallery}"
                 IsItemClickEnabled="True"
+                KeyDown="MediaGrid_KeyDown"
                 ItemClick="MediaGrid_ItemClick"
                 ItemTemplate="{StaticResource MediaTileTemplate}"
                 ItemsSource="{x:Bind ViewModel.Items}"

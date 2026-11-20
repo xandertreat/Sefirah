@@ -1127,6 +1127,9 @@ input text %pwd%</value>
   <data name="Delete" xml:space="preserve">
     <value>Delete</value>
   </data>
+  <data name="TileMoreOptions" xml:space="preserve">
+    <value>More options</value>
+  </data>
   <data name="Refresh" xml:space="preserve">
     <value>Refresh</value>
   </data>

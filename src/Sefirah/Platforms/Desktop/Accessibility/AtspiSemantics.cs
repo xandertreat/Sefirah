@@ -1,6 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text;
+using Windows.System;
 using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 
@@ -394,6 +399,11 @@ internal static class AtspiSemantics
             return true;
         }
 
+        // List and grid items expose no invoke provider; their click lives on the owning view
+        // and selection is disabled there (SelectionMode None), so select alone never opens them.
+        if (TryInvokeListViewItem(peer))
+            return true;
+
         if (TryGet<ISelectionItemProvider>(peer, out var selectionItem))
         {
             selectionItem.Select();
@@ -410,6 +420,63 @@ internal static class AtspiSemantics
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Raises ItemClick the way Uno does for a tapped or touch-narrated list row, so activation
+    /// works for gallery tiles and any other IsItemClickEnabled ListView row.
+    /// </summary>
+    private static bool TryInvokeListViewItem(AutomationPeer peer)
+    {
+        if (peer is not FrameworkElementAutomationPeer { Owner: DependencyObject owner })
+            return false;
+
+        ListViewBase? listView = null;
+        SelectorItem? container = null;
+        for (var current = owner; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is SelectorItem item)
+                container = item;
+            else if (current is ListViewBase list)
+            {
+                listView = list;
+                break;
+            }
+        }
+
+        if (listView is not { IsItemClickEnabled: true } || container is null)
+            return false;
+
+        // shortcut: reaches Uno's internal touch-narrator entry point (AutomationItemClick on newer
+        // Uno, OnItemClicked otherwise); upgrade if Uno publishes a supported API that raises ItemClick.
+        var click = listView.GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
+            .FirstOrDefault(m =>
+            {
+                var p = m.GetParameters();
+                return (m.Name is "AutomationItemClick" && p.Length is 1 && p[0].ParameterType == typeof(SelectorItem))
+                    || (m.Name is "OnItemClicked" && p.Length is 1 or 2 && p[0].ParameterType == typeof(int));
+            });
+        if (click is null)
+            return false;
+
+        var parameters = click.GetParameters();
+        object?[] args;
+        if (parameters[0].ParameterType == typeof(SelectorItem))
+        {
+            args = [container];
+        }
+        else
+        {
+            var index = listView.IndexFromContainer(container);
+            if (index < 0)
+                index = listView.Items.IndexOf(listView.ItemFromContainer(container));
+
+            args = parameters.Length is 2 ? [index, VirtualKeyModifiers.None] : [index];
+        }
+
+        click.Invoke(listView, args);
+        return true;
     }
 
     public static bool HasText(AutomationPeer peer)

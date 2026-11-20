@@ -1,5 +1,6 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 
 namespace Sefirah.Platforms.Desktop.Accessibility;
@@ -130,7 +131,7 @@ internal sealed class AtspiTree
 
         foreach (var child in children)
         {
-            if (child is null || visited.Contains(child))
+            if (child is null || visited.Contains(child) || IsRaw(child))
                 continue;
 
             var node2 = AddNode(child, depth + 1, visited);
@@ -142,6 +143,13 @@ internal sealed class AtspiTree
 
         return node;
     }
+
+    // Screen readers walk the content view; WinUI keeps elements marked
+    // AutomationProperties.AccessibilityView="Raw" (decorative glyphs, images behind a named
+    // tile) out of it, so the tree published here must filter them the same way.
+    private static bool IsRaw(AutomationPeer peer)
+        => peer is FrameworkElementAutomationPeer { Owner: { } owner }
+            && AutomationProperties.GetAccessibilityView(owner) is AccessibilityView.Raw;
 
     private void OnUi(Action action)
     {
