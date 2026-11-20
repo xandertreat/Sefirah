@@ -12,7 +12,7 @@ using Sefirah.Data.Models;
 
 namespace Sefirah.Services;
 
-public class AdbService(
+public partial class AdbService(
     ILogger<AdbService> logger,
     IDeviceManager deviceManager,
     IUserSettingsService userSettingsService
@@ -934,8 +934,19 @@ public class AdbService(
     }
 
     /// <summary>Starts the worker via adb shell if it isn't already running.</summary>
+    // Assumed phone command: `CLASSPATH=<apk path | $(pm path <pkg> ...)> app_process <dir> --nice-name=sefirah_worker <Class> [args] [&]`.
+    // Anything else (pipes, ;, &&, backticks, other binaries) is refused instead of reaching adb shell.
+    [GeneratedRegex(@"^(CLASSPATH=(\$\(pm path [A-Za-z0-9._]+( \| (cut -d: -f2|sed 's/package://'))?\)|[A-Za-z0-9._/=-]+) )?(nohup )?app_process [A-Za-z0-9._/-]+ --nice-name=sefirah_worker [A-Za-z0-9._$]+( [A-Za-z0-9._=:/-]+)*( > /dev/null 2>&1)?( &)?$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex WorkerCommandRegex();
+
     public async Task TryStartWorkerAsync(PairedDevice device, string command)
     {
+        if (string.IsNullOrWhiteSpace(command) || command.Length > 512 || !WorkerCommandRegex().IsMatch(command))
+        {
+            logger.Warn("Refusing worker launch: command from device does not match the expected form");
+            return;
+        }
+
         if (device.ConnectedAdbDevices.FirstOrDefault() is not { } adbDevice)
             return;
 
