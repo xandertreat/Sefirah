@@ -1,0 +1,26 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.a11y.atspi.Action">
+    <method name="GetActions">
+      <arg name="actions" type="a(sss)" direction="out"/>
+    </method>
+    <method name="GetActionName">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="name" type="s" direction="out"/>
+    </method>
+    <method name="GetActionDescription">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="description" type="s" direction="out"/>
+    </method>
+    <method name="GetKeyBinding">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="keyBinding" type="s" direction="out"/>
+    </method>
+    <method name="DoAction">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="performed" type="b" direction="out"/>
+    </method>
+    <property name="NActions" type="i" access="read"/>
+  </interface>
+</node>

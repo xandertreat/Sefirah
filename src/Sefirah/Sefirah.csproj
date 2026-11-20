@@ -85,6 +85,12 @@
         </PackageReference>
         <AdditionalFiles Include="Platforms/Desktop/Tray/DBusXml/com.canonical.dbusmenu.xml" Namespace="Sefirah.Platforms.Desktop.Tray.DBus" DBusGeneratorMode="Handler" />
         <AdditionalFiles Include="Platforms/Desktop/Tray/DBusXml/com.castle.sefirah.SingleInstance.xml" Namespace="Sefirah.Platforms.Desktop.Tray.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Accessible.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Action.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Application.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Cache.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Component.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
+        <AdditionalFiles Include="Platforms/Desktop/Accessibility/DBusXml/org.a11y.atspi.Text.xml" Namespace="Sefirah.Platforms.Desktop.Accessibility.DBus" DBusGeneratorMode="Handler" />
         <AdditionalFiles Include="Platforms/Desktop/Tray/DBusXml/org.kde.StatusNotifierItem.xml" Namespace="Sefirah.Platforms.Desktop.Tray.DBus" DBusGeneratorMode="Handler" />
         <AdditionalFiles Include="Platforms/Desktop/Tray/DBusXml/org.kde.StatusNotifierWatcher.xml" Namespace="Sefirah.Platforms.Desktop.Tray.DBus" DBusGeneratorMode="Proxy" />
     </ItemGroup>

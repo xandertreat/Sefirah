@@ -138,6 +138,10 @@ public partial class App : Application
                 // Navigate to main page
                 rootFrame.Navigate(typeof(MainPage), null, new SuppressNavigationTransitionInfo());
             }
+
+#if !WINDOWS
+            StartAccessibility();
+#endif
         }
     }
 
@@ -332,6 +336,20 @@ public partial class App : Application
     public static void RemoveDeviceSettingsWindow(string deviceId)
     {
         DeviceSettingsWindows.Remove(deviceId);
+    }
+
+    /// <summary>
+    /// Publishes the UI on the AT-SPI bus so screen readers and accessibility tools can drive it.
+    /// </summary>
+    private static void StartAccessibility()
+    {
+        if (Environment.GetEnvironmentVariable("SEFIRAH_NO_ACCESSIBILITY") == "1")
+            return;
+
+        if (MainWindow.Content is not FrameworkElement content)
+            return;
+
+        new Platforms.Desktop.Accessibility.AtspiServer(content).Start();
     }
 
     /// <summary>
