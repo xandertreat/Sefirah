@@ -157,6 +157,8 @@ public sealed partial class GalleryViewModel : BaseViewModel
             var bitmap = await bytes.ToBitmapAsync(ThumbnailSize);
             if (bitmap is not null)
                 item.Thumbnail = bitmap;
+            else
+                Logger.Warn($"Could not decode a thumbnail for {item.Name}");
         }
         catch (Exception ex)
         {
