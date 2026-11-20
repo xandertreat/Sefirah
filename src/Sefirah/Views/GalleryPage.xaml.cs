@@ -132,6 +132,9 @@ public sealed partial class GalleryPage : Page
         if (sender is not MenuFlyoutItem { DataContext: MediaItem item })
             return;
 
+        // Let the menu's popup finish closing first; showing the dialog inside its Click leaves it invisible.
+        await Task.Yield();
+
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,

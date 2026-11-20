@@ -84,6 +84,28 @@ internal sealed class AtspiTree
 
         var root = AddNode(peer, 0, visited);
 
+        // Flyouts, menus and dialogs render in popups outside the window content, so without this
+        // their items never reach the tree and keyboard-less users cannot press them.
+        if (element.XamlRoot is { } xamlRoot)
+        {
+            foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot))
+            {
+                if (popup.Child is not { } child)
+                    continue;
+
+                // Uno's ContentDialog has no peer of its own; a plain one still exposes its buttons.
+                var popupPeer = FrameworkElementAutomationPeer.FromElement(child)
+                    ?? FrameworkElementAutomationPeer.CreatePeerForElement(child)
+                    ?? new FrameworkElementAutomationPeer(child);
+                if (visited.Contains(popupPeer))
+                    continue;
+
+                var popupNode = AddNode(popupPeer, 1, visited);
+                popupNode.Parent = root;
+                root.Children.Add(popupNode);
+            }
+        }
+
         var nodes = new Dictionary<int, AtspiNode>(visited.Count);
         var ordered = new List<AtspiNode>(visited.Count);
         Collect(root, nodes, ordered);

@@ -3,6 +3,7 @@
 
 usage: tools/atspi-check.py [--depth N] [--invoke NAME] [--listen SECONDS]
   --invoke NAME       run DoAction(0) on the first node named NAME, then print the tree again
+  --within NAME       limit --invoke to the subtree of the first node named NAME
   --listen SECONDS    register for object/focus events and print what Sefirah emits
 """
 import argparse
@@ -111,6 +112,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--depth", type=int, default=12)
     parser.add_argument("--invoke")
+    parser.add_argument("--within", metavar="NAME", help="search for --invoke only below the first node named NAME")
     parser.add_argument("--listen", type=int, metavar="SECONDS")
     args = parser.parse_args()
 
@@ -129,7 +131,11 @@ def main():
     if not args.invoke:
         return 0
 
-    target = find(app, args.invoke)
+    scope = find(app, args.within) if args.within else app
+    if scope is None:
+        print(f"no node named {args.within!r}")
+        return 1
+    target = find(scope, args.invoke)
     if target is None:
         print(f"no node named {args.invoke!r}")
         return 1

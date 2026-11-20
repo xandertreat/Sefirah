@@ -23,8 +23,8 @@ public sealed partial class MediaItem : ObservableObject
     public string Description => $"{Name}\n{Folder} · {FormatSize(Size)} · {Modified.ToLocalTime():g}";
 
     // List containers take their accessible name from the item's ToString; without this the
-    // screen reader announces the type name instead of the file.
-    public override string ToString() => Description;
+    // screen reader announces the type name instead of the file. The tile inside carries the details.
+    public override string ToString() => Name;
 
     private static string FormatSize(long bytes) => bytes switch
     {

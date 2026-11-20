@@ -45,6 +45,7 @@ internal static class AtspiSemantics
     public const uint RoleTree = 65;
     public const uint RoleUnknown = 67;
     public const uint RoleAlert = 2;
+    public const uint RoleDialog = 16;
 
     private const int StateActive = 1;
     private const int StateBusy = 3;
@@ -115,6 +116,9 @@ internal static class AtspiSemantics
 
     private static uint CustomRole(AutomationPeer peer)
     {
+        if (peer is FrameworkElementAutomationPeer { Owner: ContentDialog })
+            return RoleDialog;
+
         var className = peer.GetClassName();
         return className switch
         {
@@ -144,6 +148,7 @@ internal static class AtspiSemantics
         RolePageTab => "page tab",
         RolePageTabList => "page tab list",
         RoleMenu => "menu",
+        RoleDialog => "dialog",
         RoleMenuItem => "menu item",
         RoleScrollBar => "scroll bar",
         RoleScrollPane => "scroll pane",
@@ -282,7 +287,11 @@ internal static class AtspiSemantics
     {
         try
         {
-            return Clean(peer.GetName());
+            var name = peer.GetName();
+            // Dialogs carry no automation name in Uno; screen readers announce them by their title.
+            if (string.IsNullOrEmpty(name) && peer is FrameworkElementAutomationPeer { Owner: ContentDialog { Title: string title } })
+                name = title;
+            return Clean(name);
         }
         catch (Exception)
         {
@@ -428,12 +437,20 @@ internal static class AtspiSemantics
     /// </summary>
     private static bool TryInvokeListViewItem(AutomationPeer peer)
     {
-        if (peer is not FrameworkElementAutomationPeer { Owner: DependencyObject owner })
-            return false;
-
         ListViewBase? listView = null;
         SelectorItem? container = null;
-        for (var current = owner; current is not null; current = VisualTreeHelper.GetParent(current))
+
+        // Rows reach the tree as item data peers, which have no owner element of their own.
+        if (peer is ItemAutomationPeer { ItemsControlAutomationPeer: FrameworkElementAutomationPeer { Owner: ListViewBase itemsOwner } } itemPeer)
+        {
+            listView = itemsOwner;
+            container = itemsOwner.ContainerFromItem(itemPeer.Item) as SelectorItem;
+        }
+        else if (peer is not FrameworkElementAutomationPeer { Owner: DependencyObject owner })
+        {
+            return false;
+        }
+        else for (var current = owner; current is not null; current = VisualTreeHelper.GetParent(current))
         {
             if (current is SelectorItem item)
                 container = item;
