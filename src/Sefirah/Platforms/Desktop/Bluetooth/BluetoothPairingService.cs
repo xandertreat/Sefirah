@@ -9,6 +9,7 @@ namespace Sefirah.Platforms.Desktop.Bluetooth;
 /// <summary>
 /// Pairs the phone from Sefirah through BlueZ, the way Phone Link does it on Windows: the desktop
 /// adapter becomes discoverable, BlueZ raises the pairing request, and the code is confirmed here.
+/// Once the device object exists, <see cref="LinkAsync"/> walks it to a working hands-free link.
 /// </summary>
 public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposable, IPathMethodHandler
 {
@@ -20,10 +21,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private const string PropertiesInterface = "org.freedesktop.DBus.Properties";
     private const string AgentPath = "/com/shrimqy/Sefirah/pairing_agent";
     private const string AgentCapability = "KeyboardDisplay";
+    private const string HandsFreeAudioGatewayUuid = "0000111f-0000-1000-8000-00805f9b34fb";
 
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PairTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan MaxRefreshBackoff = TimeSpan.FromSeconds(60);
     private const uint AdapterWindowSeconds = 180;
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(5);
 
@@ -36,6 +39,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private bool adapterPowered;
     private bool agentRegistered;
     private bool discovering;
+    private bool adapterOpened;
 
     private BluetoothPairingState state = new(BluetoothPairingStep.Connectivity, BluetoothPairingStatus.NotStarted);
     private PairedDevice? scanTargetPhone;
@@ -43,8 +47,9 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private string? phoneReportedName;
     private string? discoveredPath;
     private string? discoveredAddress;
-    private Func<string, string, Task<bool>>? confirmAsync;
+    private Func<string, string, CancellationToken, Task<bool>>? confirmAsync;
     private bool autoApproverSet;
+    private CancellationTokenSource? pendingConfirmCts;
 
     public BluetoothPairingService(ILogger<BluetoothPairingService> logger)
     {
@@ -128,30 +133,21 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
 
             State = new(BluetoothPairingStep.Discovery, BluetoothPairingStatus.InProgress);
 
-            // A phone-initiated pairing is confirmed on the phone itself, so accepting here keeps the
-            // "tap the PC on the phone" path working while PairAsync is not the originator.
-            if (confirmAsync is null)
+            // An existing bond is reused as is; asking the phone to pair again would only prompt the
+            // user, and a stale one is recovered in PairAsync.
+            var connection = await GetConnectionAsync(cancellationToken);
+            var known = connection is null
+                ? null
+                : FindPhone(await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", cancellationToken), phone, pairedOnly: true);
+            if (known is not null)
             {
-                autoApproverSet = true;
-                confirmAsync = (_, code) =>
-                {
-                    logger.Info("Accepting phone-initiated pairing.");
-                    return Task.FromResult(true);
-                };
+                discoveredPath = known.Value.Path;
+                discoveredAddress = known.Value.Address;
+                logger.Info($"{phone.Name} is already paired as {discoveredAddress} ({discoveredPath}).");
+                return true;
             }
 
-            // The agent and the discoverable window must exist before the phone can start pairing.
-            await EnsureAgentAsync(cancellationToken);
-            await SetAdapterPropertyAsync("Discoverable", VariantValue.Bool(true), cancellationToken);
-            await SetAdapterPropertyAsync("DiscoverableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
-            await SetAdapterPropertyAsync("Pairable", VariantValue.Bool(true), cancellationToken);
-            await SetAdapterPropertyAsync("PairableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
-            await StartDiscoveryAsync(cancellationToken);
-
-            // Best effort: some phone builds react by making themselves discoverable. Pairing works
-            // from the phone side without it, so a silent or refused answer is not fatal.
-            if (!await RequestPhoneDiscoveryAsync(phone, cancellationToken))
-                logger.Info("Phone did not confirm the discovery request; continuing as a discoverable desktop.");
+            await OpenForPairingAsync(phone, cancellationToken);
 
             var match = await WaitForPhoneAsync(phone, cancellationToken);
             if (match is null)
@@ -168,6 +164,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         catch (OperationCanceledException)
         {
             State = new(BluetoothPairingStep.Discovery, BluetoothPairingStatus.Cancelled);
+            return false;
+        }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ex);
+            State = new(BluetoothPairingStep.Discovery, BluetoothPairingStatus.DeviceNotFound);
             return false;
         }
         catch (Exception ex)
@@ -193,7 +195,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         }
     }
 
-    public async Task<bool> PairAsync(PairedDevice phone, Func<string, string, Task<bool>> confirmAsync,
+    public async Task<bool> PairAsync(PairedDevice phone, Func<string, string, CancellationToken, Task<bool>> confirmAsync,
         CancellationToken cancellationToken = default)
     {
         if (discoveredPath is null)
@@ -220,36 +222,42 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                 return false;
             }
 
-            var devicePath = discoveredPath;
-            var objects = await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", cancellationToken);
-            if (!objects.TryGetValue(devicePath, out var interfaces) ||
-                !interfaces.TryGetValue(DeviceInterface, out var properties))
+            var outcome = await LinkAsync(connection, discoveredPath, cancellationToken);
+            if (outcome is LinkOutcome.StaleBond)
             {
-                logger.Debug($"BlueZ no longer exposes {devicePath}.");
-                State = new(BluetoothPairingStep.Pairing, BluetoothPairingStatus.PairingFailed);
+                // BlueZ still holds a key the phone has dropped; only a fresh pairing replaces it.
+                logger.Info($"{phone.Name} rejected the stored Bluetooth key; removing {discoveredPath} and pairing again.");
+                State = new(BluetoothPairingStep.Pairing, BluetoothPairingStatus.StaleBond);
+                await RemoveDeviceAsync(connection, discoveredPath, cancellationToken);
+                await OpenForPairingAsync(phone, cancellationToken);
+
+                var match = await WaitForPhoneAsync(phone, cancellationToken);
+                if (match is null)
+                {
+                    State = new(BluetoothPairingStep.Discovery, BluetoothPairingStatus.DeviceNotFound);
+                    return false;
+                }
+
+                discoveredPath = match.Value.Path;
+                discoveredAddress = match.Value.Address;
+                State = new(BluetoothPairingStep.Pairing, BluetoothPairingStatus.InProgress);
+                outcome = await LinkAsync(connection, discoveredPath, cancellationToken);
+            }
+
+            if (outcome is not LinkOutcome.Linked)
+            {
+                State = new(BluetoothPairingStep.Pairing, outcome switch
+                {
+                    LinkOutcome.ConnectFailed => BluetoothPairingStatus.ConnectFailed,
+                    _ => BluetoothPairingStatus.PairingFailed,
+                });
                 return false;
             }
 
-            if (!ManagedObjectReader.Bool(properties, "Paired"))
-                await InvokeDeviceAsync(connection, devicePath, "Pair", cancellationToken);
-
-            var address = ManagedObjectReader.String(properties, "Address");
-            phone.BluetoothAddress = string.IsNullOrWhiteSpace(address) ? discoveredAddress : address;
-            phone.BluetoothClassicDeviceId = devicePath;
-
-            // Trust is a property, not a method. It only affects reconnecting later, so a refusal
-            // must not report the whole pairing as failed.
-            try
-            {
-                await SetDevicePropertyAsync(connection, devicePath, "Trusted", VariantValue.Bool(true), cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.Warn($"Could not mark {phone.Name} as trusted: {ex.Message}");
-            }
-
+            phone.BluetoothAddress = discoveredAddress;
+            phone.BluetoothClassicDeviceId = discoveredPath;
             State = new(BluetoothPairingStep.Ready, BluetoothPairingStatus.Success);
-            logger.Info($"Paired {phone.Name} at {phone.BluetoothAddress}.");
+            logger.Info($"Linked {phone.Name} at {phone.BluetoothAddress}.");
             return true;
         }
         catch (OperationCanceledException)
@@ -257,10 +265,11 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             State = new(BluetoothPairingStep.Pairing, BluetoothPairingStatus.Cancelled);
             return false;
         }
-        catch (DBusErrorReplyException ex) when (ex.ErrorName is "org.bluez.Error.AlreadyExists")
+        catch (DBusConnectionException ex)
         {
-            State = new(BluetoothPairingStep.Ready, BluetoothPairingStatus.Success);
-            return true;
+            DropConnection(ex);
+            State = new(BluetoothPairingStep.Pairing, BluetoothPairingStatus.PairingFailed);
+            return false;
         }
         catch (Exception ex)
         {
@@ -271,7 +280,11 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         finally
         {
             this.confirmAsync = null;
+            autoApproverSet = false;
             await StopDiscoveryAsync();
+            // The setup window is closed: stop being the default agent so headsets and other
+            // devices can pair through GNOME or bluetoothctl without hitting this agent.
+            await UnregisterAgentAsync();
         }
     }
 
@@ -283,7 +296,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         try
         {
             var connection = await GetConnectionAsync(disposing.Token);
-            if (connection is null || adapterPath is null)
+            if (connection is null)
                 return DeviceUnpairingResultStatus.Failed;
 
             var path = deviceId.StartsWith("/org/bluez/", StringComparison.Ordinal)
@@ -293,11 +306,13 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             if (path is null)
                 return DeviceUnpairingResultStatus.Failed;
 
-            var writer = connection.GetMessageWriter();
-            writer.WriteMethodCallHeader(BlueZService, adapterPath, AdapterInterface, "RemoveDevice", "o");
-            writer.WriteObjectPath(path);
-            await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, disposing.Token);
+            await RemoveDeviceAsync(connection, path, disposing.Token);
             return DeviceUnpairingResultStatus.Unpaired;
+        }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ex);
+            return DeviceUnpairingResultStatus.Failed;
         }
         catch (Exception ex)
         {
@@ -330,6 +345,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             confirmAsync = null;
         autoApproverSet = false;
         _ = StopDiscoveryAsync();
+        _ = UnregisterAgentAsync();
     }
 
     public async ValueTask HandleMethodAsync(MethodContext context)
@@ -399,7 +415,13 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                 case "DisplayPinCode":
                 case "DisplayPasskey":
                 case "Release":
+                    ReplyEmpty(context);
+                    return;
+
                 case "Cancel":
+                    // The phone aborted pairing; dismiss any confirmation the dialog still shows.
+                    logger.Info("BlueZ cancelled the pairing request; dismissing the pending confirmation.");
+                    pendingConfirmCts?.Cancel();
                     ReplyEmpty(context);
                     return;
 
@@ -421,14 +443,25 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         if (confirm is null)
             return false;
 
+        using var cts = new CancellationTokenSource();
+        pendingConfirmCts = cts;
         try
         {
-            return await confirm(deviceName, code);
+            return await confirm(deviceName, code, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // BlueZ cancelled the pairing; the dialog was dismissed with the token.
+            return false;
         }
         catch (Exception ex)
         {
             logger.Error("Pairing confirmation failed.", ex);
             return false;
+        }
+        finally
+        {
+            pendingConfirmCts = null;
         }
     }
 
@@ -451,7 +484,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             var objects = await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", disposing.Token);
             return objects.TryGetValue(devicePath, out var interfaces) &&
                    interfaces.TryGetValue(DeviceInterface, out var properties) &&
-                   MatchesPhone(properties, phone, MatchLabels(phone).ToArray());
+                   MatchesPhoneExactly(properties, phone);
+        }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ex);
+            return false;
         }
         catch (Exception ex)
         {
@@ -511,16 +549,9 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             if (connection is null)
                 return null;
 
-            var labels = MatchLabels(phone).ToArray();
-            var objects = await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", cancellationToken);
-            foreach (var (path, interfaces) in objects)
-            {
-                if (!interfaces.TryGetValue(DeviceInterface, out var properties))
-                    continue;
-
-                if (MatchesPhone(properties, phone, labels))
-                    return (path, ManagedObjectReader.String(properties, "Address"));
-            }
+            var match = FindPhone(await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", cancellationToken), phone, pairedOnly: false);
+            if (match is not null)
+                return match;
 
             await Task.Delay(1000, cancellationToken);
         }
@@ -528,14 +559,33 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         return null;
     }
 
-    private static bool MatchesPhone(Dictionary<string, VariantValue> properties, PairedDevice phone, string[] labels)
+    /// <summary>
+    /// Finds the phone in a GetManagedObjects reply. The stored address wins over a name match, so a
+    /// similarly named device never shadows the phone; while pairing, any matching device is a
+    /// candidate, but only for discovery — approvals are gated by <see cref="MatchesPhoneExactly"/>.
+    /// </summary>
+    private (string Path, string Address)? FindPhone(ManagedObjects objects, PairedDevice phone, bool pairedOnly)
     {
-        var address = ManagedObjectReader.String(properties, "Address");
-        if (!string.IsNullOrWhiteSpace(phone.BluetoothAddress) &&
-            string.Equals(address, phone.BluetoothAddress, StringComparison.OrdinalIgnoreCase))
-            return true;
+        var labels = MatchLabels(phone).ToArray();
+        (string Path, string Address)? byName = null;
+        foreach (var (path, interfaces) in objects)
+        {
+            if (!interfaces.TryGetValue(DeviceInterface, out var properties) ||
+                (pairedOnly && !ManagedObjectReader.Bool(properties, "Paired")))
+                continue;
 
-        return MatchesAny(ManagedObjectReader.Describe(properties, "Alias", "Name"), labels);
+            var address = ManagedObjectReader.String(properties, "Address");
+            if (!string.IsNullOrWhiteSpace(phone.BluetoothAddress) &&
+                string.Equals(address, phone.BluetoothAddress, StringComparison.OrdinalIgnoreCase))
+                return (path, address);
+
+            // A paired headset can share the phone's name prefix ("Pixel" / "Pixel Buds"), so known devices must be phones.
+            if (byName is null && MatchesAny(ManagedObjectReader.Describe(properties, "Alias", "Name"), labels) &&
+                (!pairedOnly || ManagedObjectReader.String(properties, "Icon") == "phone"))
+                byName = (path, address);
+        }
+
+        return byName;
     }
 
     private IEnumerable<string> MatchLabels(PairedDevice phone)
@@ -566,8 +616,163 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         return false;
     }
 
+    /// <summary>
+    /// Approvals (auto or confirmed) may only ever match the phone itself: same address or exactly
+    /// the same normalized name. Substring matches would auto-approve a rogue "Galaxy…" device.
+    /// </summary>
+    private bool MatchesPhoneExactly(Dictionary<string, VariantValue> properties, PairedDevice phone)
+    {
+        var address = ManagedObjectReader.String(properties, "Address");
+        if (!string.IsNullOrWhiteSpace(phone.BluetoothAddress) &&
+            string.Equals(address, phone.BluetoothAddress, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var normalized = Normalize(ManagedObjectReader.Describe(properties, "Alias", "Name"));
+        if (normalized is null)
+            return false;
+
+        return MatchLabels(phone).Select(Normalize)
+            .Any(label => label is not null && label.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string? Normalize(string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : new string(name.Where(ch => !char.IsWhiteSpace(ch)).ToArray()).ToLowerInvariant();
+
+    internal enum PhoneLinkStep { Pair, Trust, Connect, ConnectHandsFree, Ready }
+
+    private enum LinkOutcome { Linked, StaleBond, PairingFailed, ConnectFailed }
+
+    /// <summary>The next action that moves the phone's org.bluez.Device1 state towards a usable hands-free link.</summary>
+    internal static PhoneLinkStep NextStep(Dictionary<string, VariantValue> device, IReadOnlySet<PhoneLinkStep> attempted)
+    {
+        if (!ManagedObjectReader.Bool(device, "Paired"))
+            return PhoneLinkStep.Pair;
+
+        // Trust only matters for later reconnects, so one refused attempt is enough.
+        if (!ManagedObjectReader.Bool(device, "Trusted") && !attempted.Contains(PhoneLinkStep.Trust))
+            return PhoneLinkStep.Trust;
+
+        if (!ManagedObjectReader.Bool(device, "Connected"))
+            return PhoneLinkStep.Connect;
+
+        // Device1 has no per-profile state; an empty UUID list means SDP has not finished yet.
+        var uuids = ManagedObjectReader.Strings(device, "UUIDs");
+        var offersHandsFree = uuids.Length == 0 || uuids.Contains(HandsFreeAudioGatewayUuid, StringComparer.OrdinalIgnoreCase);
+        return offersHandsFree && !attempted.Contains(PhoneLinkStep.ConnectHandsFree)
+            ? PhoneLinkStep.ConnectHandsFree
+            : PhoneLinkStep.Ready;
+    }
+
+    /// <summary>
+    /// Re-reads the device after every action and runs the step <see cref="NextStep"/> picks, so an
+    /// already paired, trusted or connected phone skips straight past the work that is done.
+    /// </summary>
+    private async Task<LinkOutcome> LinkAsync(DBusConnection connection, string devicePath, CancellationToken cancellationToken)
+    {
+        var attempted = new HashSet<PhoneLinkStep>();
+        var deadline = DateTime.UtcNow + PairTimeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var objects = await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", cancellationToken);
+            if (!objects.TryGetValue(devicePath, out var interfaces) ||
+                !interfaces.TryGetValue(DeviceInterface, out var device))
+            {
+                logger.Debug($"BlueZ no longer exposes {devicePath}.");
+                return LinkOutcome.PairingFailed;
+            }
+
+            var step = NextStep(device, attempted);
+            if (step is PhoneLinkStep.Ready)
+                return LinkOutcome.Linked;
+
+            if (!attempted.Add(step))
+            {
+                logger.Warn($"Bluetooth step {step} did not take effect on {devicePath}.");
+                return step is PhoneLinkStep.Pair ? LinkOutcome.PairingFailed : LinkOutcome.ConnectFailed;
+            }
+
+            logger.Info($"Bluetooth step {step} for {devicePath}.");
+            try
+            {
+                switch (step)
+                {
+                    case PhoneLinkStep.Pair:
+                        await InvokeDeviceAsync(connection, devicePath, "Pair", cancellationToken);
+                        break;
+                    case PhoneLinkStep.Trust:
+                        await SetDevicePropertyAsync(connection, devicePath, "Trusted", VariantValue.Bool(true), cancellationToken);
+                        break;
+                    case PhoneLinkStep.Connect:
+                        await InvokeDeviceAsync(connection, devicePath, "Connect", cancellationToken);
+                        break;
+                    case PhoneLinkStep.ConnectHandsFree:
+                        await ConnectProfileAsync(connection, devicePath, HandsFreeAudioGatewayUuid, cancellationToken);
+                        break;
+                }
+            }
+            catch (DBusErrorReplyException ex) when (ex.ErrorName is "org.bluez.Error.InProgress")
+            {
+                // The phone is pairing or connecting on its own; wait for it to settle and look again.
+                attempted.Remove(step);
+                await Task.Delay(1000, cancellationToken);
+            }
+            catch (DBusErrorReplyException ex) when (ex.ErrorName is "org.bluez.Error.AlreadyExists" or "org.bluez.Error.AlreadyConnected")
+            {
+            }
+            catch (DBusErrorReplyException ex) when (step is PhoneLinkStep.Pair)
+            {
+                logger.Warn($"Pairing {devicePath} failed: {ex.ErrorName}: {ex.Message}");
+                return LinkOutcome.PairingFailed;
+            }
+            catch (DBusErrorReplyException ex) when (IsStaleBond(ex))
+            {
+                logger.Info($"Bluetooth step {step} for {devicePath} failed authentication: {ex.ErrorName}: {ex.Message} (stale bond).");
+                return LinkOutcome.StaleBond;
+            }
+            catch (DBusErrorReplyException ex)
+            {
+                // The next read decides: BlueZ may have dropped the key (pair again) or the phone is out of range.
+                logger.Warn($"Bluetooth step {step} for {devicePath} failed: {ex.ErrorName}: {ex.Message}");
+            }
+        }
+
+        return LinkOutcome.ConnectFailed;
+    }
+
+    // shortcut: matches BlueZ's error text for a link key the phone no longer has; extend if a stack reports it differently.
+    private static bool IsStaleBond(DBusErrorReplyException ex) =>
+        ex.ErrorName is "org.bluez.Error.AuthenticationFailed" or "org.bluez.Error.AuthenticationRejected" ||
+        ex.Message.Contains("key-missing", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("Authentication Failed", StringComparison.OrdinalIgnoreCase);
+
+    private async Task OpenForPairingAsync(PairedDevice phone, CancellationToken cancellationToken)
+    {
+        // A phone-initiated pairing is confirmed on the phone itself, so accepting here keeps the
+        // "tap the PC on the phone" path working while PairAsync is not the originator.
+        if (confirmAsync is null)
+        {
+            autoApproverSet = true;
+            confirmAsync = (_, code, _) =>
+            {
+                logger.Info($"Accepting phone-initiated pairing (code {code}).");
+                return Task.FromResult(true);
+            };
+        }
+
+        // The agent and the discoverable window must exist before the phone can start pairing.
+        await EnsureAgentAsync(cancellationToken);
+        adapterOpened = true;
+        await SetAdapterPropertyAsync("Discoverable", VariantValue.Bool(true), cancellationToken);
+        await SetAdapterPropertyAsync("DiscoverableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
+        await SetAdapterPropertyAsync("Pairable", VariantValue.Bool(true), cancellationToken);
+        await SetAdapterPropertyAsync("PairableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
+        await StartDiscoveryAsync(cancellationToken);
+
+        // Best effort: some phone builds react by making themselves discoverable. Pairing works
+        // from the phone side without it, so a silent or refused answer is not fatal.
+        if (!await RequestPhoneDiscoveryAsync(phone, cancellationToken))
+            logger.Info("Phone did not confirm the discovery request; continuing as a discoverable desktop.");
+    }
 
     private async Task EnsureAgentAsync(CancellationToken cancellationToken)
     {
@@ -580,19 +785,58 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
 
         connection.AddMethodHandler(this);
 
-        var register = connection.GetMessageWriter();
-        register.WriteMethodCallHeader(BlueZService, AgentManagerPath, AgentManagerInterface, "RegisterAgent", "os");
-        register.WriteObjectPath(AgentPath);
-        register.WriteString(AgentCapability);
-        await connection.CallMethodAsync(register.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+        try
+        {
+            var register = connection.GetMessageWriter();
+            register.WriteMethodCallHeader(BlueZService, AgentManagerPath, AgentManagerInterface, "RegisterAgent", "os");
+            register.WriteObjectPath(AgentPath);
+            register.WriteString(AgentCapability);
+            await connection.CallMethodAsync(register.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+            logger.Info("Registered the BlueZ pairing agent.");
+        }
+        catch (DBusErrorReplyException ex) when (ex.ErrorName is "org.bluez.Error.AlreadyExists")
+        {
+            // Left over from an earlier window on this connection; it is our agent either way.
+        }
 
-        var defaults = connection.GetMessageWriter();
-        defaults.WriteMethodCallHeader(BlueZService, AgentManagerPath, AgentManagerInterface, "RequestDefaultAgent", "o");
-        defaults.WriteObjectPath(AgentPath);
-        await connection.CallMethodAsync(defaults.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+        try
+        {
+            var defaults = connection.GetMessageWriter();
+            defaults.WriteMethodCallHeader(BlueZService, AgentManagerPath, AgentManagerInterface, "RequestDefaultAgent", "o");
+            defaults.WriteObjectPath(AgentPath);
+            await connection.CallMethodAsync(defaults.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"RequestDefaultAgent failed: {ex.Message}");
+        }
 
         agentRegistered = true;
-        logger.Debug("Registered the BlueZ pairing agent.");
+    }
+
+    /// <summary>Releases the pairing agent so other devices pair through the system's own UI again.</summary>
+    private async Task UnregisterAgentAsync()
+    {
+        if (!agentRegistered)
+            return;
+
+        agentRegistered = false;
+        var connection = system;
+        if (connection is null)
+            return;
+
+        try
+        {
+            var writer = connection.GetMessageWriter();
+            writer.WriteMethodCallHeader(BlueZService, AgentManagerPath, AgentManagerInterface, "UnregisterAgent", "o");
+            writer.WriteObjectPath(AgentPath);
+            await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout);
+            logger.Info("Unregistered the BlueZ pairing agent.");
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"UnregisterAgent failed: {ex.Message}");
+        }
     }
 
     private async Task StartDiscoveryAsync(CancellationToken cancellationToken)
@@ -624,6 +868,11 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                 discovering = false;
             }
 
+            // Reusing a bond never opened the adapter, so leave the user's own visibility setting alone.
+            if (!adapterOpened)
+                return;
+
+            adapterOpened = false;
             await SetAdapterPropertyAsync("Discoverable", VariantValue.Bool(false), disposing.Token);
             await SetAdapterPropertyAsync("Pairable", VariantValue.Bool(false), disposing.Token);
         }
@@ -667,6 +916,24 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             .WaitAsync(member is "Pair" ? PairTimeout : CallTimeout, cancellationToken);
     }
 
+    private static async Task ConnectProfileAsync(DBusConnection connection, string devicePath, string uuid,
+        CancellationToken cancellationToken)
+    {
+        var writer = connection.GetMessageWriter();
+        writer.WriteMethodCallHeader(BlueZService, devicePath, DeviceInterface, "ConnectProfile", "s");
+        writer.WriteString(uuid);
+        await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+    }
+
+    /// <summary>Removes the device through the adapter that owns it, which need not be the selected one.</summary>
+    private static async Task RemoveDeviceAsync(DBusConnection connection, string devicePath, CancellationToken cancellationToken)
+    {
+        var writer = connection.GetMessageWriter();
+        writer.WriteMethodCallHeader(BlueZService, devicePath[..devicePath.LastIndexOf('/')], AdapterInterface, "RemoveDevice", "o");
+        writer.WriteObjectPath(devicePath);
+        await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+    }
+
     private async Task<string?> FindDevicePathByAddressAsync(DBusConnection connection, string deviceId,
         CancellationToken cancellationToken)
     {
@@ -684,18 +951,37 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private async Task RefreshLoopAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(RefreshInterval);
+        var backoff = TimeSpan.Zero;
         try
         {
-            await RefreshAdapterAsync(cancellationToken);
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-                await RefreshAdapterAsync(cancellationToken);
+            while (true)
+            {
+                try
+                {
+                    await RefreshAdapterAsync(cancellationToken);
+                    backoff = TimeSpan.Zero;
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (DBusConnectionException ex)
+                {
+                    // The bus connection died; drop it so the next refresh reconnects, and ease off.
+                    DropConnection(ex);
+                    backoff = backoff == TimeSpan.Zero ? RefreshInterval : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxRefreshBackoff.Ticks));
+                    await Task.Delay(backoff, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.Debug($"Bluetooth adapter refresh failed: {ex.Message}");
+                }
+
+                await timer.WaitForNextTickAsync(cancellationToken);
+            }
         }
         catch (OperationCanceledException)
         {
-        }
-        catch (Exception ex)
-        {
-            logger.Debug($"Bluetooth adapter refresh loop stopped: {ex.Message}");
         }
     }
 
@@ -719,10 +1005,14 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             if (!interfaces.TryGetValue(AdapterInterface, out var properties))
                 continue;
 
+            // With several adapters, prefer one that is powered.
+            var powered = ManagedObjectReader.Bool(properties, "Powered");
+            if (adapterPath is not null && (adapterPowered || !powered))
+                continue;
+
             adapterPath = path;
             adapterPresent = true;
-            adapterPowered = ManagedObjectReader.Bool(properties, "Powered");
-            return;
+            adapterPowered = powered;
         }
     }
 
@@ -749,6 +1039,20 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         }
     }
 
+    /// <summary>Drops a bus connection that died so the next query re-establishes it.</summary>
+    private void DropConnection(DBusConnectionException ex)
+    {
+        var connection = system;
+        if (connection is null)
+            return;
+
+        system = null;
+        // BlueZ removes the agent when its owning bus connection goes away.
+        agentRegistered = false;
+        logger.Info($"System bus connection lost ({ex.Message}); the next Bluetooth query reconnects.");
+        connection.Dispose();
+    }
+
     private static void ReplyEmpty(MethodContext context)
     {
         var writer = context.CreateReplyWriter(null);
@@ -759,6 +1063,8 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     {
         disposing.Cancel();
         disposing.Dispose();
+        // Closing the connection also removes the agent and default-agent registration bus-side.
+        logger.Info("Disposing BluetoothPairingService; the pairing agent goes with the bus connection.");
         system?.Dispose();
         system = null;
     }

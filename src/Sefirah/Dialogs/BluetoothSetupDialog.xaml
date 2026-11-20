@@ -117,7 +117,25 @@
                     Spacing="8"
                     Visibility="{x:Bind ViewModel.ShowPairingFailedMessage, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <TextBlock
-                        Text="Pairing did not complete. Try again."
+                        Text="Pairing did not complete. If your phone still lists this PC, forget it there and try again."
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+
+                <StackPanel
+                    Spacing="8"
+                    Visibility="{x:Bind ViewModel.ShowStaleBondMessage, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock
+                        Text="Your phone no longer recognizes this PC, so the old pairing was removed. Open Bluetooth on your phone and pair with this PC again."
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+
+                <StackPanel
+                    Spacing="8"
+                    Visibility="{x:Bind ViewModel.ShowConnectFailedMessage, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock
+                        Text="Your phone is paired but did not connect. Make sure Bluetooth is on and the phone is nearby, then try again."
                         TextWrapping="Wrap"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
