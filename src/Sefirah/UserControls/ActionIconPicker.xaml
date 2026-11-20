@@ -52,8 +52,9 @@
                             BorderThickness="0"
                             Click="IconItem_Click"
                             Tag="{x:Bind}"
-                            ToolTipService.ToolTip="{x:Bind Tooltip}">
-                            <FontIcon FontSize="20" Glyph="{x:Bind Glyph}" />
+                            ToolTipService.ToolTip="{x:Bind Tooltip}"
+                            AutomationProperties.Name="{x:Bind Tooltip}">
+                            <FontIcon FontSize="20" Glyph="{x:Bind Glyph}" AutomationProperties.AccessibilityView="Raw" />
                         </Button>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>

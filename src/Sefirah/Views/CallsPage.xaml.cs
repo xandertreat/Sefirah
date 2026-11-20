@@ -1,6 +1,7 @@
 using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -261,6 +262,7 @@ public sealed partial class CallsPage : Page
             }
 
             var button = new Button { Style = (Style)Resources["DialPadKeyStyle"], Content = label };
+            AutomationProperties.SetName(button, key);
             Grid.SetRow(button, i / 3);
             Grid.SetColumn(button, i % 3);
             HookCharacterHold(button, key, characters);

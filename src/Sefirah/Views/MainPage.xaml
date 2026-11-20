@@ -87,7 +87,7 @@
                             Click="OpenSideBar_Click"
                             AutomationProperties.Name="{helpers:ResourceString Name=OpenPane}"
                             ToolTipService.ToolTip="{helpers:ResourceString Name=OpenPane}">
-                            <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76C;" />
+                            <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76C;" AutomationProperties.AccessibilityView="Raw" />
                         </Button>
 
                         <Button
@@ -342,7 +342,7 @@
                         Visibility="Collapsed"
                         AutomationProperties.Name="{helpers:ResourceString Name=ClosePane}"
                         ToolTipService.ToolTip="{helpers:ResourceString Name=ClosePane}">
-                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76B;" />
+                        <FontIcon FontFamily="{ThemeResource SymbolThemeFontFamily}" Glyph="&#xE76B;" AutomationProperties.AccessibilityView="Raw" />
                     </Button>
                     </Grid>
                 </Grid>
@@ -424,7 +424,8 @@
                                     FontSize="16"
                                     Foreground="{ThemeResource AccentFillColorDefaultBrush}"
                                     Glyph="&#xEDAB;"
-                                    Visibility="{x:Bind ViewModel.IsUpdating, Mode=OneWay, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                                    Visibility="{x:Bind ViewModel.IsUpdating, Mode=OneWay, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                    AutomationProperties.AccessibilityView="Raw" />
                                 <ProgressRing
                                     x:Name="loadingicon"
                                     Width="16"

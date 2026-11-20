@@ -126,14 +126,16 @@
                                 <Button
                                     VerticalAlignment="Stretch"
                                     Command="{Binding DataContext.OpenDeviceSettingsCommand, ElementName=DevicePage}"
-                                    CommandParameter="{x:Bind}">
-                                    <FontIcon FontSize="14" Glyph="&#xE713;" />
+                                    CommandParameter="{x:Bind}"
+                                    AutomationProperties.Name="{helpers:ResourceString Name=DeviceSettings}">
+                                    <FontIcon FontSize="14" Glyph="&#xE713;" AutomationProperties.AccessibilityView="Raw" />
                                 </Button>
                                 <Button
                                     VerticalAlignment="Stretch"
                                     Command="{Binding DataContext.RemoveDeviceCommand, ElementName=DevicePage}"
-                                    CommandParameter="{x:Bind}">
-                                    <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                                    CommandParameter="{x:Bind}"
+                                    AutomationProperties.Name="{helpers:ResourceString Name=Remove}">
+                                    <FontIcon FontSize="14" Glyph="&#xE74D;" AutomationProperties.AccessibilityView="Raw" />
                                 </Button>
                             </StackPanel>
                         </wuc:SettingsCard>

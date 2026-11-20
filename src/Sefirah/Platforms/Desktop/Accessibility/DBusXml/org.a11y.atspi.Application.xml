@@ -1,0 +1,23 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.a11y.atspi.Application">
+    <method name="GetApplicationBusAddress">
+      <arg name="address" type="s" direction="out"/>
+    </method>
+    <method name="GetLocale">
+      <arg name="lctype" type="u" direction="in"/>
+      <arg name="locale" type="s" direction="out"/>
+    </method>
+    <method name="RegisterEventListener">
+      <arg name="event" type="s" direction="in"/>
+    </method>
+    <method name="DeregisterEventListener">
+      <arg name="event" type="s" direction="in"/>
+    </method>
+    <property name="ToolkitName" type="s" access="read"/>
+    <property name="Version" type="s" access="read"/>
+    <property name="AtspiVersion" type="s" access="read"/>
+    <property name="Id" type="i" access="readwrite"/>
+  </interface>
+</node>

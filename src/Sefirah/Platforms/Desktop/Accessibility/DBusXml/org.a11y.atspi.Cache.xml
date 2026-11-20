@@ -1,0 +1,16 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.a11y.atspi.Cache">
+    <method name="GetItems">
+      <arg name="items" type="a((so)(so)(so)iiassusau)" direction="out"/>
+    </method>
+    <signal name="AddAccessible">
+      <arg name="nodeAdded" type="((so)(so)(so)iiassusau)"/>
+    </signal>
+    <signal name="RemoveAccessible">
+      <arg name="nodeRemoved" type="(so)"/>
+    </signal>
+    <signal name="Ready"/>
+  </interface>
+</node>

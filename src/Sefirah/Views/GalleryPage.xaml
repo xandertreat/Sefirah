@@ -21,7 +21,8 @@
                 IsRightTapEnabled="True"
                 DataContextChanged="MediaTile_DataContextChanged"
                 Loaded="MediaTile_Loaded"
-                ToolTipService.ToolTip="{x:Bind Description}">
+                ToolTipService.ToolTip="{x:Bind Description}"
+                AutomationProperties.Name="{x:Bind Description}">
                 <Grid.ContextFlyout>
                     <MenuFlyout>
                         <MenuFlyoutItem
@@ -124,7 +125,8 @@
                 Grid.Column="2"
                 VerticalAlignment="Center"
                 Command="{x:Bind ViewModel.RefreshCommand}"
-                ToolTipService.ToolTip="{helpers:ResourceString Name=Refresh}">
+                ToolTipService.ToolTip="{helpers:ResourceString Name=Refresh}"
+                AutomationProperties.Name="{helpers:ResourceString Name=Refresh}">
                 <FontIcon Glyph="&#xE72C;" />
             </Button>
         </Grid>
@@ -145,6 +147,7 @@
             <Button
                 Grid.Column="1"
                 Click="ClearStatusClick"
+                AutomationProperties.Name="{helpers:ResourceString Name=Dismiss}"
                 Visibility="{x:Bind ViewModel.HasStatus, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <FontIcon FontSize="12" Glyph="&#xE711;" />
             </Button>

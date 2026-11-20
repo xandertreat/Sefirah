@@ -1,0 +1,47 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.a11y.atspi.Accessible">
+    <method name="GetChildAtIndex">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="child" type="(so)" direction="out"/>
+    </method>
+    <method name="GetChildren">
+      <arg name="children" type="a(so)" direction="out"/>
+    </method>
+    <method name="GetIndexInParent">
+      <arg name="index" type="i" direction="out"/>
+    </method>
+    <method name="GetRelationSet">
+      <arg name="relations" type="a(ua(so))" direction="out"/>
+    </method>
+    <method name="GetRole">
+      <arg name="role" type="u" direction="out"/>
+    </method>
+    <method name="GetRoleName">
+      <arg name="roleName" type="s" direction="out"/>
+    </method>
+    <method name="GetLocalizedRoleName">
+      <arg name="roleName" type="s" direction="out"/>
+    </method>
+    <method name="GetState">
+      <arg name="state" type="au" direction="out"/>
+    </method>
+    <method name="GetAttributes">
+      <arg name="attributes" type="a{ss}" direction="out"/>
+    </method>
+    <method name="GetApplication">
+      <arg name="application" type="(so)" direction="out"/>
+    </method>
+    <method name="GetInterfaces">
+      <arg name="interfaces" type="as" direction="out"/>
+    </method>
+    <property name="Name" type="s" access="read"/>
+    <property name="Description" type="s" access="read"/>
+    <property name="Parent" type="(so)" access="read"/>
+    <property name="ChildCount" type="i" access="read"/>
+    <property name="Locale" type="s" access="read"/>
+    <property name="AccessibleId" type="s" access="read"/>
+    <property name="HelpText" type="s" access="read"/>
+  </interface>
+</node>

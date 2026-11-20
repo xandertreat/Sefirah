@@ -1,0 +1,37 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.a11y.atspi.Text">
+    <method name="GetText">
+      <arg name="startOffset" type="i" direction="in"/>
+      <arg name="endOffset" type="i" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+    </method>
+    <method name="GetCharacterCount">
+      <arg name="count" type="i" direction="out"/>
+    </method>
+    <method name="GetTextAtOffset">
+      <arg name="offset" type="i" direction="in"/>
+      <arg name="type" type="u" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+      <arg name="startOffset" type="i" direction="out"/>
+      <arg name="endOffset" type="i" direction="out"/>
+    </method>
+    <method name="GetTextAfterOffset">
+      <arg name="offset" type="i" direction="in"/>
+      <arg name="type" type="u" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+      <arg name="startOffset" type="i" direction="out"/>
+      <arg name="endOffset" type="i" direction="out"/>
+    </method>
+    <method name="GetTextBeforeOffset">
+      <arg name="offset" type="i" direction="in"/>
+      <arg name="type" type="u" direction="in"/>
+      <arg name="text" type="s" direction="out"/>
+      <arg name="startOffset" type="i" direction="out"/>
+      <arg name="endOffset" type="i" direction="out"/>
+    </method>
+    <property name="Text" type="s" access="read"/>
+    <property name="CharacterCount" type="i" access="read"/>
+  </interface>
+</node>

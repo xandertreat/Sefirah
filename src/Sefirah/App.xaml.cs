@@ -138,6 +138,10 @@ public partial class App : Application
                 // Navigate to main page
                 rootFrame.Navigate(typeof(MainPage), null, new SuppressNavigationTransitionInfo());
             }
+
+#if !WINDOWS
+            StartAccessibility();
+#endif
         }
     }
 
@@ -332,6 +336,28 @@ public partial class App : Application
     public static void RemoveDeviceSettingsWindow(string deviceId)
     {
         DeviceSettingsWindows.Remove(deviceId);
+    }
+
+    /// <summary>
+    /// Publishes the UI on the AT-SPI bus so screen readers and accessibility tools can drive it.
+    /// </summary>
+    private static void StartAccessibility()
+    {
+        if (Environment.GetEnvironmentVariable("SEFIRAH_NO_ACCESSIBILITY") == "1")
+            return;
+
+        if (MainWindow.Content is not FrameworkElement content)
+            return;
+
+        // The bridge is optional; nothing it does may take the app down with it.
+        try
+        {
+            new Platforms.Desktop.Accessibility.AtspiServer(content).Start();
+        }
+        catch (Exception ex)
+        {
+            Ioc.Default.GetService<Microsoft.Extensions.Logging.ILogger>()?.LogError(ex, "Could not start the accessibility bridge");
+        }
     }
 
     /// <summary>

@@ -135,6 +135,7 @@
                     Visibility="{x:Bind ViewModel.ShowCallLogEmpty, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <ListView
                     x:Name="CallLogsListView"
+                    AutomationProperties.Name="{helpers:ResourceString Name=Calls}"
                     ItemsSource="{x:Bind ViewModel.CallLogs, Mode=OneWay}"
                     SelectionMode="None"
                     IsItemClickEnabled="True"
@@ -227,7 +228,7 @@
                                         <Button.Resources>
                                             <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
                                         </Button.Resources>
-                                        <FontIcon Glyph="&#xE717;" FontSize="16" />
+                                        <FontIcon Glyph="&#xE717;" FontSize="16" AutomationProperties.AccessibilityView="Raw" />
                                     </Button>
                                 </StackPanel>
                             </Grid>
@@ -456,7 +457,7 @@
                             <Button.Resources>
                                 <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
                             </Button.Resources>
-                            <FontIcon Glyph="&#xE717;" FontSize="22" />
+                            <FontIcon Glyph="&#xE717;" FontSize="22" AutomationProperties.AccessibilityView="Raw" />
                         </Button>
                         <RepeatButton
                             Grid.Column="2"

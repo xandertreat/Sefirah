@@ -76,8 +76,8 @@
                                 AutomationProperties.Name="{helpers:ResourceString Name=SearchApps}"
                                 PlaceholderText="{helpers:ResourceString Name=SearchApps}"
                                 Text="{x:Bind ViewModel.NotificationAppsSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="1">
-                                <FontIcon Glyph="&#xEA98;" />
+                            <Button Grid.Column="1" AutomationProperties.Name="{helpers:ResourceString Name=NotificationFilterButton}">
+                                <FontIcon Glyph="&#xEA98;" AutomationProperties.AccessibilityView="Raw" />
                                 <Button.Flyout>
                                     <MenuFlyout>
                                         <MenuFlyoutItem
