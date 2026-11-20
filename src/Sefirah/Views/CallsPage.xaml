@@ -144,17 +144,17 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="models:CallLog">
                             <Grid Padding="4,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <Border
                                     Grid.ColumnSpan="3"
                                     Margin="-4,-8"
                                     Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                     CornerRadius="{ThemeResource ControlCornerRadius}"
                                     Visibility="{x:Bind IsSelected, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
                                 <Grid
                                     Grid.Column="0"
                                     Width="40"
