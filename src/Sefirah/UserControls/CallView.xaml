@@ -131,6 +131,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <Button
@@ -143,6 +144,22 @@
 
             <Button
                 Grid.Column="1"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="{helpers:ResourceString Name=Answer}"
+                Command="{x:Bind ViewModel.PrimaryCall.AnswerCallCommand, Mode=OneWay}"
+                Visibility="{x:Bind ViewModel.PrimaryCall.IsIncoming, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Button.Resources>
+                    <ResourceDictionary Source="ms-appx:///Styles/CallButtonResources.xaml" />
+                </Button.Resources>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE717;" FontSize="16" Foreground="White" />
+                    <TextBlock Text="{helpers:ResourceString Name=Answer}" VerticalAlignment="Center" Foreground="White" />
+                </StackPanel>
+            </Button>
+
+            <Button
+                Grid.Column="2"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
                 Command="{x:Bind ViewModel.PrimaryCall.EndCallCommand, Mode=OneWay}"
@@ -160,7 +177,7 @@
                 </Button.Resources>
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xF405;" FontSize="16" Foreground="White" />
-                    <TextBlock Text="{helpers:ResourceString Name=End}" VerticalAlignment="Center" Foreground="White" />
+                    <TextBlock Text="{x:Bind ViewModel.PrimaryCall.EndButtonText, Mode=OneWay}" VerticalAlignment="Center" Foreground="White" />
                 </StackPanel>
             </Button>
         </Grid>

@@ -1031,6 +1031,12 @@ input text %pwd%</value>
   <data name="End" xml:space="preserve">
     <value>End</value>
   </data>
+  <data name="Answer" xml:space="preserve">
+    <value>Answer</value>
+  </data>
+  <data name="Decline" xml:space="preserve">
+    <value>Decline</value>
+  </data>
   <data name="CallOnHold" xml:space="preserve">
     <value>On hold</value>
   </data>

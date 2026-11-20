@@ -59,13 +59,32 @@
     </Page.Resources>
 
     <Grid SizeChanged="Page_SizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="HistoryColumn" Width="2*" />
             <ColumnDefinition x:Name="DialerColumn" Width="*" />
         </Grid.ColumnDefinitions>
 
+        <!-- Live call: the view the popup window shows, so a ringing or active call is also here -->
+        <Border
+            x:Name="ActiveCallCard"
+            Grid.Row="0"
+            Grid.ColumnSpan="2"
+            Margin="16,12,16,0"
+            Padding="8"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefault}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="{x:Bind ViewModel.HasActiveCall, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ContentControl x:Name="ActiveCallHost" HorizontalContentAlignment="Stretch" />
+        </Border>
+
         <!-- Call history -->
-        <Grid x:Name="HistoryPane" Grid.Column="0" RowSpacing="8" BorderBrush="{ThemeResource CardStrokeColorDefault}" BorderThickness="0,0,1,0">
+        <Grid x:Name="HistoryPane" Grid.Column="0" Grid.Row="1" RowSpacing="8" BorderBrush="{ThemeResource CardStrokeColorDefault}" BorderThickness="0,0,1,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -222,6 +241,7 @@
         <Grid
             x:Name="DialerPane"
             Grid.Column="1"
+            Grid.Row="1"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch">
             <Button

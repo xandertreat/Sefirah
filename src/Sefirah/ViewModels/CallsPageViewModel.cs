@@ -14,7 +14,13 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     private readonly IDeviceManager deviceManager = Ioc.Default.GetRequiredService<IDeviceManager>();
     private readonly CallLogRepository callLogRepository = Ioc.Default.GetRequiredService<CallLogRepository>();
     private readonly ContactRepository contactRepository = Ioc.Default.GetRequiredService<ContactRepository>();
+    private readonly ICallFeature callFeature = Ioc.Default.GetRequiredService<ICallFeature>();
     #endregion
+
+    // Hosts the same call view the popup window shows, so a ringing or active call is visible in the tab too.
+    public CallWindowViewModel ActiveCall { get; } = new();
+
+    public bool HasActiveCall => callFeature.PrimaryCall is not null;
 
     public ObservableCollection<CallLog> CallLogs { get; } = [];
 
@@ -91,8 +97,14 @@ public sealed partial class CallsPageViewModel : BaseViewModel
         deviceManager.ActiveDeviceChanged += OnActiveDeviceChanged;
         phoneLineService.LineStatusChanged += OnLineStatusChanged;
         callLogRepository.CallLogUpdated += OnCallLogUpdated;
+        callFeature.ActiveCallChanged += OnActiveCallChanged;
         LoadCallLogs();
         ApplyCallingLineStatus(phoneLineService.LineStatus);
+    }
+
+    private void OnActiveCallChanged(object? sender, EventArgs e)
+    {
+        App.MainWindow.DispatcherQueue.EnqueueAsync(() => OnPropertyChanged(nameof(HasActiveCall)));
     }
 
 

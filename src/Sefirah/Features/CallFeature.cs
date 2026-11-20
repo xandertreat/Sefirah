@@ -79,7 +79,7 @@ public class CallFeature(
                     var title = "CallIncoming".GetLocalizedResource();
                     var (displayName, _, avatarUri) = await GetContactInfoAsync(call);
                     var transportDeviceId = call.TransportDeviceId;
-                    call.Dispose();
+                    await ShowSessionAsync(call);
                     try
                     {
                         await platformNotificationHandler.ShowCallNotification(callId, transportDeviceId, title, displayName, avatarUri);
@@ -92,60 +92,7 @@ public class CallFeature(
                 }
 
                 default:
-                    await App.MainWindow.DispatcherQueue.EnqueueAsync(async () =>
-                    {
-                        try
-                        {
-                            if (PrimaryCall?.CallId == callId || SecondaryCall?.CallId == callId)
-                            {
-                                call.Dispose();
-                                return;
-                            }
-
-                            CallSessionViewModel? newSession = null;
-
-                            if (PrimaryCall is null)
-                            {
-                                var callerContact = await GetContactAsync(call);
-                                newSession = new CallSessionViewModel(call, callerContact);
-                                PrimaryCall = newSession;
-                            }
-                            else if (SecondaryCall is null)
-                            {
-                                var callerContact = await GetContactAsync(call);
-                                newSession = new CallSessionViewModel(call, callerContact);
-                                SecondaryCall = newSession;
-                            }
-                            else
-                            {
-                                // more than 2 calls isn't supported
-                                call.Dispose();
-                                return;
-                            }
-
-                            newSession.SessionEnded += OnSessionEnded;
-
-                            // Keep the currently active (non-held) call in the primary slot.
-                            // When a second call arrives and becomes active, promote it to primary.
-                            if (PrimaryCall is not null && SecondaryCall is not null
-                                && PrimaryCall.PhoneCall.Status is CallingPhoneCallStatus.Held
-                                && SecondaryCall.PhoneCall.Status is not CallingPhoneCallStatus.Held)
-                            {
-                                (PrimaryCall, SecondaryCall) = (SecondaryCall, PrimaryCall);
-                            }
-
-                            await platformNotificationHandler.RemoveNotificationsByTagAndGroup(callId, Constants.Notification.IncomingPhoneCallGroup);
-
-                            ActiveCallChanged?.Invoke(this, EventArgs.Empty);
-                            ActiveCallWindow ??= new CallWindow();
-                            UpdateActiveCallWindowSize();
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.Error($"Failed to create call session for {callId}.", ex);
-                            call.Dispose();
-                        }
-                    });
+                    await ShowSessionAsync(call);
                     break;
             }
         }
@@ -154,6 +101,65 @@ public class CallFeature(
             logger.Warn($"Failed to handle call state change for {callId}.", ex);
             call.Dispose();
         }
+    }
+
+    // A ringing call gets a session too, so it can be answered or declined from the app as well as the notification.
+    private async Task ShowSessionAsync(IPhoneCall call)
+    {
+        var callId = call.CallId;
+        await App.MainWindow.DispatcherQueue.EnqueueAsync(async () =>
+        {
+            try
+            {
+                if (PrimaryCall?.CallId == callId || SecondaryCall?.CallId == callId)
+                {
+                    return;
+                }
+
+                CallSessionViewModel? newSession = null;
+
+                if (PrimaryCall is null)
+                {
+                    var callerContact = await GetContactAsync(call);
+                    newSession = new CallSessionViewModel(call, callerContact);
+                    PrimaryCall = newSession;
+                }
+                else if (SecondaryCall is null)
+                {
+                    var callerContact = await GetContactAsync(call);
+                    newSession = new CallSessionViewModel(call, callerContact);
+                    SecondaryCall = newSession;
+                }
+                else
+                {
+                    // more than 2 calls isn't supported
+                    call.Dispose();
+                    return;
+                }
+
+                newSession.SessionEnded += OnSessionEnded;
+
+                // Keep the currently active (non-held) call in the primary slot.
+                // When a second call arrives and becomes active, promote it to primary.
+                if (PrimaryCall is not null && SecondaryCall is not null
+                    && PrimaryCall.PhoneCall.Status is CallingPhoneCallStatus.Held
+                    && SecondaryCall.PhoneCall.Status is not CallingPhoneCallStatus.Held)
+                {
+                    (PrimaryCall, SecondaryCall) = (SecondaryCall, PrimaryCall);
+                }
+
+                await platformNotificationHandler.RemoveNotificationsByTagAndGroup(callId, Constants.Notification.IncomingPhoneCallGroup);
+
+                ActiveCallChanged?.Invoke(this, EventArgs.Empty);
+                ActiveCallWindow ??= new CallWindow();
+                UpdateActiveCallWindowSize();
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Failed to create call session for {callId}.", ex);
+                call.Dispose();
+            }
+        });
     }
 
     private void OnSessionEnded(object? sender, EventArgs e)

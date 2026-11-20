@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using Sefirah.Data.Models;
 using Sefirah.Platforms.Desktop.Services;
+using Sefirah.UserControls;
 using Sefirah.ViewModels;
 using Windows.System;
 using Windows.UI.Core;
@@ -35,6 +36,7 @@ public sealed partial class CallsPage : Page
         AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
         ViewModel = Ioc.Default.GetRequiredService<CallsPageViewModel>();
         DataContext = ViewModel;
+        ActiveCallHost.Content = new CallView(ViewModel.ActiveCall);
         Loaded += (_, _) =>
         {
             UpdatePaneLayout();

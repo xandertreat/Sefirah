@@ -51,6 +51,12 @@ public sealed partial class CallSessionViewModel : BaseViewModel, IDisposable
     [ObservableProperty]
     public partial bool IsMuteActive { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsIncoming { get; set; }
+
+    // A ringing call is declined rather than ended.
+    public string EndButtonText => IsIncoming ? "Decline".GetLocalizedResource() : "End".GetLocalizedResource();
+
     public CallSessionViewModel(IPhoneCall call, Contact callContact) : base()
     {
         PhoneCall = call;
@@ -112,6 +118,12 @@ public sealed partial class CallSessionViewModel : BaseViewModel, IDisposable
         CanToggleHold = PhoneCall.Status is CallingPhoneCallStatus.Talking or CallingPhoneCallStatus.Held;
         CanToggleMute = PhoneCall.Status is CallingPhoneCallStatus.Talking or CallingPhoneCallStatus.Held;
         IsHoldActive = PhoneCall.Status is CallingPhoneCallStatus.Held;
+
+        if (IsIncoming != (PhoneCall.Status is CallingPhoneCallStatus.Incoming))
+        {
+            IsIncoming = PhoneCall.Status is CallingPhoneCallStatus.Incoming;
+            OnPropertyChanged(nameof(EndButtonText));
+        }
     }
 
     private void RefreshAudioDevice()
@@ -184,8 +196,20 @@ public sealed partial class CallSessionViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task AnswerCallAsync()
+    {
+        await PhoneCall.AcceptIncomingAsync();
+    }
+
+    [RelayCommand]
     private async Task EndCallAsync()
     {
+        if (PhoneCall.Status is CallingPhoneCallStatus.Incoming)
+        {
+            await PhoneCall.RejectIncomingAsync();
+            return;
+        }
+
         await PhoneCall.EndAsync();
     }
 
