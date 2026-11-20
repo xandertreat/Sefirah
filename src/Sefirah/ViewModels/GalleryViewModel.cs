@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Media.Imaging;
+using SkiaSharp;
 using Sefirah.Data.Models;
 using Sefirah.Helpers;
 using Sefirah.Utils;
@@ -13,13 +14,17 @@ public sealed partial class GalleryViewModel : BaseViewModel
 
     private readonly IDeviceManager deviceManager = Ioc.Default.GetRequiredService<IDeviceManager>();
     private readonly ISftpFeature sftpFeature = Ioc.Default.GetRequiredService<ISftpFeature>();
-    // Three at a time keeps the SFTP link busy without starving the grid.
-    private readonly SemaphoreSlim thumbnailGate = new(3);
+    // Six at a time keeps the SFTP link busy without starving the grid.
+    private readonly SemaphoreSlim thumbnailGate = new(6);
     private readonly HashSet<string> thumbnailRequests = [];
 
     private List<MediaItem> mediaItems = [];
     private StorageFolder? saveFolder;
     private string? scannedDeviceId;
+    private CancellationTokenSource? scanCts;
+    // UI-thread only. The grid fill is drained from a timer; see StartGridFill.
+    private readonly Queue<MediaItem> pendingItems = [];
+    private bool scanComplete;
 
     public ObservableCollection<MediaItem> Items { get; } = [];
 
@@ -49,8 +54,10 @@ public sealed partial class GalleryViewModel : BaseViewModel
     [RelayCommand]
     public async Task RefreshAsync()
     {
-        if (IsLoading)
-            return;
+        // A new refresh supersedes any in-flight scan, including one started by a device change.
+        scanCts?.Cancel();
+        scanCts = new CancellationTokenSource();
+        var cts = scanCts;
 
         if (deviceManager.ActiveDevice is not { } device)
         {
@@ -67,15 +74,48 @@ public sealed partial class GalleryViewModel : BaseViewModel
             // Storage can finish mounting after the page is already up, so give it a moment.
             if (await WaitForRootAsync(device.Id) is not { } root)
             {
-                Reset("MediaUnavailable");
+                if (cts == scanCts)
+                    Reset("MediaUnavailable");
                 return;
             }
 
-            mediaItems = await Task.Run(() => MediaScanner.Enumerate(root));
             scannedDeviceId = device.Id;
-            Logger.Info($"Gallery: {mediaItems.Count} photo and video items found on {device.Name}");
+            mediaItems = [];
+            Items.Clear();
             thumbnailRequests.Clear();
-            ApplyFilter();
+            pendingItems.Clear();
+            scanComplete = false;
+            OnPropertyChanged(nameof(IsEmpty));
+
+            StartGridFill(cts);
+
+            // The scanner streams batches so tiles appear while the walk is still running.
+            // mediaItems is only touched on the UI thread, both here and by DeleteAsync.
+            await Task.Run(() => MediaScanner.Enumerate(root, batch =>
+                dispatcher.TryEnqueue(() =>
+                {
+                    if (cts != scanCts || cts.IsCancellationRequested)
+                        return;
+
+                    mediaItems.AddRange(batch);
+                    foreach (var item in batch)
+                        if (Matches(item))
+                            pendingItems.Enqueue(item);
+                }), cts.Token));
+
+            // The scan callbacks are fire-and-forget, so scanComplete must be set from the UI
+            // queue itself: dispatcher ordering makes this run after the last batch landed.
+            dispatcher.TryEnqueue(() =>
+            {
+                if (cts != scanCts)
+                    return;
+                scanComplete = true;
+                OnPropertyChanged(nameof(IsEmpty));
+            });
+            Logger.Info($"Gallery: {mediaItems.Count} photo and video items found on {device.Name}");
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -84,9 +124,38 @@ public sealed partial class GalleryViewModel : BaseViewModel
         }
         finally
         {
-            IsLoading = false;
-            OnPropertyChanged(nameof(IsEmpty));
+            if (cts == scanCts)
+            {
+                IsLoading = false;
+                OnPropertyChanged(nameof(IsEmpty));
+            }
         }
+    }
+
+    // Uno's GridView does not virtualize here (every container is realized), and each append
+    // re-arranges the whole panel, so appends are paced on a timer to keep the UI responsive.
+    private void StartGridFill(CancellationTokenSource cts)
+    {
+        var timer = dispatcher.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(250);
+        timer.IsRepeating = true;
+        timer.Tick += (_, _) =>
+        {
+            if (cts != scanCts)
+            {
+                timer.Stop();
+                return;
+            }
+
+            for (var added = 0; added < 200 && pendingItems.TryDequeue(out var item); added++)
+                Items.Add(item);
+
+            if (scanComplete && pendingItems.Count == 0)
+                timer.Stop();
+
+            OnPropertyChanged(nameof(IsEmpty));
+        };
+        timer.Start();
     }
 
     private void Reset(string statusKey)
@@ -145,29 +214,69 @@ public sealed partial class GalleryViewModel : BaseViewModel
     /// <summary>
     /// Loads a thumbnail when a tile is realized. The original is large, so it is only read for tiles on screen.
     /// </summary>
-    public async Task LoadThumbnailAsync(MediaItem item)
+    public Task LoadThumbnailAsync(MediaItem item)
     {
         if (item.IsVideo || item.Thumbnail is not null || !thumbnailRequests.Add(item.Path))
-            return;
+            return Task.CompletedTask;
 
-        await thumbnailGate.WaitAsync();
-        try
+        // The wait, the decode and the gate release all stay off the UI thread, so the gate keeps
+        // flowing even while the UI thread is busy. Only the property assignment touches the UI.
+        // A refresh cancels the pending decodes via the scan token.
+        var token = scanCts?.Token ?? CancellationToken.None;
+        _ = Task.Run(async () =>
         {
-            var bytes = await File.ReadAllBytesAsync(item.Path);
-            var bitmap = await bytes.ToBitmapAsync(ThumbnailSize);
-            if (bitmap is not null)
-                item.Thumbnail = bitmap;
-            else
-                Logger.Warn($"Could not decode a thumbnail for {item.Name}");
-        }
-        catch (Exception ex)
+            var acquired = false;
+            try
+            {
+                await thumbnailGate.WaitAsync(token);
+                acquired = true;
+                if (await DecodeThumbnailAsync(item.Path) is { } source)
+                    dispatcher.TryEnqueue(() => item.Thumbnail = source);
+                else
+                    Logger.Warn($"Could not decode a thumbnail for {item.Name}");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"Could not load a thumbnail for {item.Name}: {ex.Message}", ex);
+            }
+            finally
+            {
+                if (acquired)
+                    thumbnailGate.Release();
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    // Skia decodes in ~70 ms where Uno's BitmapImage takes ~800 ms on the full-size photo; after
+    // resizing with Skia the tiny thumbnail decodes in BitmapImage almost instantly, off the UI thread.
+    private static async Task<BitmapImage?> DecodeThumbnailAsync(string path)
+    {
+        var bytes = await File.ReadAllBytesAsync(path);
+        return await Task.Run(async () =>
         {
-            Logger.Warn($"Could not load a thumbnail for {item.Name}", ex);
-        }
-        finally
-        {
-            thumbnailGate.Release();
-        }
+            using var bitmap = SKBitmap.Decode(bytes);
+            if (bitmap is null)
+                return null;
+
+            // Fit inside a ThumbnailSize square, preserving aspect ratio.
+            var scale = Math.Min((float)ThumbnailSize / bitmap.Width, (float)ThumbnailSize / bitmap.Height);
+            var width = Math.Max(1, (int)(bitmap.Width * scale));
+            var height = Math.Max(1, (int)(bitmap.Height * scale));
+            using var scaled = bitmap.Resize(new SKImageInfo(width, height), new SKSamplingOptions(SKCubicResampler.Mitchell));
+            if (scaled is null)
+                return null;
+
+            using var image = SKImage.FromBitmap(scaled);
+            using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+            using var stream = encoded.AsStream();
+            var thumbnail = new BitmapImage();
+            await thumbnail.SetSourceAsync(stream.AsRandomAccessStream());
+            return thumbnail;
+        });
     }
 
     [RelayCommand]

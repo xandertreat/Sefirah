@@ -19,6 +19,7 @@
                 Width="152"
                 Height="152"
                 IsRightTapEnabled="True"
+                DataContextChanged="MediaTile_DataContextChanged"
                 Loaded="MediaTile_Loaded"
                 ToolTipService.ToolTip="{x:Bind Description}">
                 <Grid.ContextFlyout>

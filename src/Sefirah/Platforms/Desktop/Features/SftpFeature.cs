@@ -176,6 +176,10 @@ public partial class SftpFeature(
 
     public string? GetLocalRoot(string deviceId)
     {
+        // Dev hook for gallery work: point the scanner at a local folder without a paired phone.
+        if (Environment.GetEnvironmentVariable("SEFIRAH_GALLERY_ROOT") is { Length: > 0 } devRoot && Directory.Exists(devRoot))
+            return devRoot;
+
         if (!_sessions.TryGetValue(deviceId, out var session) || session is not { Backend: { } backend, Location: { } location })
             return null;
 
