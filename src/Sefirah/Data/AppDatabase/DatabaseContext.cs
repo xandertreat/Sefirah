@@ -33,10 +33,13 @@ public class DatabaseContext
     private static SQLiteConnection TryCreateDatabase(ILogger logger)
     {
         var databasePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, Constants.LocalSettings.DatabaseFileName);
+        RestrictDatabaseFiles(databasePath, createIfMissing: true);
         var db = new SQLiteConnection(databasePath)
         {
             BusyTimeout = TimeSpan.FromSeconds(5),
         };
+        // -wal/-shm appear once the connection is open
+        RestrictDatabaseFiles(databasePath, createIfMissing: false);
 
         db.CreateTable<SchemaVersionEntity>();
 
@@ -78,6 +81,22 @@ public class DatabaseContext
         }
 
         return db;
+    }
+
+    // The database holds SMS, contacts and device certificates: owner-only on Unix.
+    private static void RestrictDatabaseFiles(string databasePath, bool createIfMissing)
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        if (createIfMissing && !File.Exists(databasePath))
+            File.Create(databasePath).Dispose();
+
+        var directory = Path.GetDirectoryName(databasePath)!;
+        foreach (var file in Directory.EnumerateFiles(directory, Path.GetFileName(databasePath) + "*"))
+            File.SetUnixFileMode(file, OwnerOnly);
+        foreach (var file in Directory.EnumerateFiles(directory, Path.GetFileNameWithoutExtension(databasePath) + "*.bak"))
+            File.SetUnixFileMode(file, OwnerOnly);
     }
 
     private static void SetSchemaVersion(SQLiteConnection db, int version)
