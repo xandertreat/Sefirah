@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.RegularExpressions;
 using Sefirah.Data.Models;
 using Sefirah.Utils;
 using Windows.ApplicationModel.DataTransfer;
@@ -5,7 +7,7 @@ using Windows.System;
 
 namespace Sefirah.Platforms.Desktop.Features;
 
-public class SftpFeature(
+public partial class SftpFeature(
     ILogger<SftpFeature> logger,
     IUserSettingsService userSettingsService) : ISftpFeature
 {
@@ -19,11 +21,35 @@ public class SftpFeature(
 
     private readonly Dictionary<string, DeviceSession> _sessions = [];
 
+    [GeneratedRegex(@"^[A-Za-z0-9._][A-Za-z0-9._-]*$")]
+    private static partial Regex UsernameRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")]
+    private static partial Regex HostnameRegex();
+
+    // Username and host reach ssh/sshfs argument lists: refuse anything that could parse as an option.
+    internal static bool IsValidUsername(string? username) =>
+        username is { Length: > 0 and <= 64 } && UsernameRegex().IsMatch(username);
+
+    internal static bool IsValidHost(string? host) =>
+        host is { Length: > 0 and <= 253 } && (IPAddress.TryParse(host, out _) || HostnameRegex().IsMatch(host));
+
+    private static string KnownHostsPath => Path.Combine(ApplicationData.Current.LocalFolder.Path, "sftp_known_hosts");
+
+    private static string HostKeyAlias(string deviceId) =>
+        "sefirah-" + string.Concat(deviceId.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+
     public Task InitializeAsync() => Task.CompletedTask;
 
     public async Task Mount(PairedDevice device, SftpServerInfo info)
     {
         if (string.IsNullOrEmpty(device.Address)) return;
+
+        if (!IsValidUsername(info.Username) || !IsValidHost(device.Address))
+        {
+            logger.Warn($"Refusing SFTP mount for {device.Name}: invalid username or host");
+            return;
+        }
 
         // Drop any previous mount for this device
         Remove(device.Id);
@@ -97,8 +123,9 @@ public class SftpFeature(
                 session.Info.Password,
                 path);
 
+            // Never put the password on the clipboard (history managers, clipboard sync).
             var dataPackage = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
-            dataPackage.SetText(uri.AbsoluteUri);
+            dataPackage.SetText(SftpUriHelper.CreateGvfsUri(session.Host, session.Info.Port, session.Info.Username, path));
             Clipboard.SetContent(dataPackage);
             await Launcher.LaunchUriAsync(uri);
         }
@@ -160,9 +187,12 @@ public class SftpFeature(
         {
             var mountUri = SftpUriHelper.CreateGvfsUri(host, info.Port, info.Username);
 
-            // Android SFTP host keys change often; clear + accept-new mirrors
-            RunProcess("ssh-keygen", ["-R", $"[{host}]:{info.Port}"]);
-            await AcceptHostKeyAsync(host, info.Port, info.Username);
+            // Trust on first use in the app's own file; a changed key aborts instead of being replaced.
+            if (!await AcceptHostKeyAsync(deviceId, host, info.Port, info.Username))
+                return false;
+            // gvfs's ssh reads ~/.ssh/known_hosts, so add (never remove) the now-verified host there too.
+            await RunProcessWithStdinAsync("ssh", SshProbeArguments(host, info.Port, info.Username,
+                "-o", "StrictHostKeyChecking=accept-new"), stdin: null);
 
             var (exitCode, errorOutput) = await RunProcessWithStdinAsync("gio", ["mount", mountUri], info.Password);
 
@@ -204,8 +234,9 @@ public class SftpFeature(
                     mountPoint,
                     "-p", info.Port.ToString(),
                     "-s",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "-o", $"UserKnownHostsFile={KnownHostsPath}",
+                    "-o", $"HostKeyAlias={HostKeyAlias(deviceId)}",
                     "-o", "reconnect",
                     "-o", "ServerAliveInterval=30",
                     "-o", "password_stdin"
@@ -214,6 +245,8 @@ public class SftpFeature(
 
             if (exitCode != 0)
             {
+                if (errorOutput.Contains("Host key verification failed", StringComparison.OrdinalIgnoreCase))
+                    logger.Warn($"SFTP host key for {deviceId} did not match the stored key (phone app reinstalled, or possible interception). Remove the '{HostKeyAlias(deviceId)}' line from {KnownHostsPath} to trust the new key.");
                 logger.Error($"Failed to mount sshfs SFTP {remote}: {errorOutput}");
                 try { Directory.Delete(mountPoint); } catch { /* ignore */ }
                 return false;
@@ -309,19 +342,33 @@ public class SftpFeature(
             || desktop.Contains("Plasma", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task AcceptHostKeyAsync(string host, int port, string username)
+    private static string[] SshProbeArguments(string host, int port, string username, params string[] extra) =>
+    [
+        .. extra,
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=5",
+        "-p", port.ToString(),
+        "-l", username,
+        "--", host,
+        "true"
+    ];
+
+    private async Task<bool> AcceptHostKeyAsync(string deviceId, string host, int port, string username)
     {
-        await RunProcessWithStdinAsync(
+        var (_, errorOutput) = await RunProcessWithStdinAsync(
             "ssh",
-            [
+            SshProbeArguments(host, port, username,
                 "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=5",
-                "-p", port.ToString(),
-                $"{username}@{host}",
-                "true"
-            ],
+                "-o", $"UserKnownHostsFile={KnownHostsPath}",
+                "-o", $"HostKeyAlias={HostKeyAlias(deviceId)}"),
             stdin: null);
+
+        if (!errorOutput.Contains("HOST IDENTIFICATION HAS CHANGED", StringComparison.OrdinalIgnoreCase) &&
+            !errorOutput.Contains("Host key verification failed", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        logger.Warn($"SFTP host key for {deviceId} changed since it was first trusted (phone app reinstalled, or possible interception). Not mounting. Remove the '{HostKeyAlias(deviceId)}' line from {KnownHostsPath} to trust the new key.");
+        return false;
     }
 
     private static int RunProcess(string fileName, IEnumerable<string> arguments)

@@ -20,6 +20,8 @@ public partial class ReceiveFileHandler(
     private Client? client;
     private FileStream? fileStream;
     private FileMetadata? currentFileMetadata;
+    private string? currentFilePath;
+    private string? lastReceivedPath;
     private long bytesTransferred;
     private long totalBytesTransferred = 0;
     private readonly long totalBytes = files.Sum(f => f.FileSize);
@@ -83,14 +85,24 @@ public partial class ReceiveFileHandler(
                     await transferCompletionSource.Task;
                 }
 
-                string fullPath = silent
-                    ? LocalAppPaths.CreateClipboardFilePath(Path.GetExtension(fileMetadata.FileName))
-                    : Path.Combine(storageLocation, fileMetadata.FileName);
-                Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+                // The phone controls the file name: keep only the leaf and never overwrite.
+                var safeName = Path.GetFileName(fileMetadata.FileName ?? string.Empty);
+                if (safeName is "" or "." or "..")
+                    throw new IOException("Rejected invalid file name from device");
 
                 transferCompletionSource = new TaskCompletionSource<bool>();
                 currentFileMetadata = fileMetadata;
-                fileStream = new FileStream(fullPath, FileMode.Create);
+                string fullPath;
+                if (silent)
+                {
+                    fullPath = LocalAppPaths.CreateClipboardFilePath(Path.GetExtension(safeName));
+                    fileStream = new FileStream(fullPath, FileMode.CreateNew);
+                }
+                else
+                {
+                    (fileStream, fullPath) = CreateUniqueFile(storageLocation, safeName);
+                }
+                currentFilePath = fullPath;
 
                 var startMessage = Encoding.UTF8.GetBytes(FileTransferService.StartMessage + "\n");
                 client?.Send(startMessage);
@@ -107,6 +119,7 @@ public partial class ReceiveFileHandler(
                     resultFile = await StorageFile.GetFileFromPathAsync(fullPath);
                 }
 
+                lastReceivedPath = fullPath;
                 CleanupFileStream();
             }
 
@@ -126,7 +139,7 @@ public partial class ReceiveFileHandler(
                         "FileTransferNotification.Completed".GetLocalizedResource(),
                         string.Format("FileTransferNotification.CompletedSingle".GetLocalizedResource(), files[0].FileName, device.Name),
                         TransferId.ToString(),
-                        Path.Combine(storageLocation, files[0].FileName));
+                        lastReceivedPath);
                 }
             }
 
@@ -218,20 +231,40 @@ public partial class ReceiveFileHandler(
         fileStream?.Dispose();
         fileStream = null;
         currentFileMetadata = null;
+        currentFilePath = null;
         bytesTransferred = 0;
+    }
+
+    private static (FileStream Stream, string FullPath) CreateUniqueFile(string folder, string fileName)
+    {
+        Directory.CreateDirectory(folder);
+        var root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var ext = Path.GetExtension(fileName);
+
+        for (var i = 0; i < 1000; i++)
+        {
+            var candidate = Path.GetFullPath(Path.Combine(root, i == 0 ? fileName : $"{name} ({i}){ext}"));
+            if (!candidate.StartsWith(root, StringComparison.Ordinal))
+                throw new IOException("Rejected file name outside the save folder");
+
+            try { return (new FileStream(candidate, FileMode.CreateNew), candidate); }
+            catch (IOException) when (File.Exists(candidate)) { }
+        }
+        throw new IOException("Could not find a free file name");
     }
 
     private void CleanupFailedFile()
     {
         // Save file metadata before cleanup
         var fileToDelete = currentFileMetadata;
-        
+        var failedFilePath = currentFilePath;
+
         CleanupFileStream();
-        
+
         // Delete the incomplete file if it exists
-        if (fileToDelete is not null)
+        if (fileToDelete is not null && failedFilePath is not null)
         {
-            var failedFilePath = Path.Combine(storageLocation, fileToDelete.FileName);
             if (File.Exists(failedFilePath))
             {
                 try

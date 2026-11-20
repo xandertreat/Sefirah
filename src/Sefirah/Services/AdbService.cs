@@ -12,7 +12,7 @@ using Sefirah.Data.Models;
 
 namespace Sefirah.Services;
 
-public class AdbService(
+public partial class AdbService(
     ILogger<AdbService> logger,
     IDeviceManager deviceManager,
     IUserSettingsService userSettingsService
@@ -934,8 +934,19 @@ public class AdbService(
     }
 
     /// <summary>Starts the worker via adb shell if it isn't already running.</summary>
+    // The phone sends WorkerStarter.command(): `<nativeLibraryDir>/libsefirah_worker.so --apk=<sourceDir>` (shrimqy/Sefirah-Android).
+    // Only that exact shape under /data/app is allowed; anything else (other binaries, ;, |, $(), ..) is refused.
+    [GeneratedRegex(@"^(?!.*\.\.)/data/app/[A-Za-z0-9._~=+/-]+/lib/[a-z0-9_]+/libsefirah_worker\.so --apk=/data/app/[A-Za-z0-9._~=+/-]+/base\.apk$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex WorkerCommandRegex();
+
     public async Task TryStartWorkerAsync(PairedDevice device, string command)
     {
+        if (string.IsNullOrWhiteSpace(command) || command.Length > 512 || !WorkerCommandRegex().IsMatch(command))
+        {
+            logger.Warn("Refusing worker launch: command from device does not match the expected form");
+            return;
+        }
+
         if (device.ConnectedAdbDevices.FirstOrDefault() is not { } adbDevice)
             return;
 

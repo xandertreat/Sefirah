@@ -24,6 +24,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PairTimeout = TimeSpan.FromSeconds(90);
     private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(45);
+    private const uint AdapterWindowSeconds = 180;
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(5);
 
     private readonly ILogger logger;
@@ -43,6 +44,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private string? discoveredPath;
     private string? discoveredAddress;
     private Func<string, string, Task<bool>>? confirmAsync;
+    private bool autoApproverSet;
 
     public BluetoothPairingService(ILogger<BluetoothPairingService> logger)
     {
@@ -128,18 +130,22 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
 
             // A phone-initiated pairing is confirmed on the phone itself, so accepting here keeps the
             // "tap the PC on the phone" path working while PairAsync is not the originator.
-            confirmAsync ??= (_, code) =>
+            if (confirmAsync is null)
             {
-                logger.Info($"Accepting phone-initiated pairing (code {code}).");
-                return Task.FromResult(true);
-            };
+                autoApproverSet = true;
+                confirmAsync = (_, code) =>
+                {
+                    logger.Info("Accepting phone-initiated pairing.");
+                    return Task.FromResult(true);
+                };
+            }
 
             // The agent and the discoverable window must exist before the phone can start pairing.
             await EnsureAgentAsync(cancellationToken);
             await SetAdapterPropertyAsync("Discoverable", VariantValue.Bool(true), cancellationToken);
-            await SetAdapterPropertyAsync("DiscoverableTimeout", VariantValue.UInt32(0), cancellationToken);
+            await SetAdapterPropertyAsync("DiscoverableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
             await SetAdapterPropertyAsync("Pairable", VariantValue.Bool(true), cancellationToken);
-            await SetAdapterPropertyAsync("PairableTimeout", VariantValue.UInt32(0), cancellationToken);
+            await SetAdapterPropertyAsync("PairableTimeout", VariantValue.UInt32(AdapterWindowSeconds), cancellationToken);
             await StartDiscoveryAsync(cancellationToken);
 
             // Best effort: some phone builds react by making themselves discoverable. Pairing works
@@ -177,7 +183,13 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             phoneReportedName = null;
 
             if (discoveredPath is null)
+            {
+                // Never leave the blanket auto-approver armed after a failed or cancelled discovery.
+                if (autoApproverSet)
+                    confirmAsync = null;
+                autoApproverSet = false;
                 await StopDiscoveryAsync();
+            }
         }
     }
 
@@ -188,6 +200,7 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
             return false;
 
         this.confirmAsync = confirmAsync;
+        autoApproverSet = false;
 
         try
         {
@@ -313,6 +326,9 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         phoneReportedName = null;
         discoveredPath = null;
         discoveredAddress = null;
+        if (autoApproverSet)
+            confirmAsync = null;
+        autoApproverSet = false;
         _ = StopDiscoveryAsync();
     }
 
@@ -327,6 +343,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                     var reader = context.Request.GetBodyReader();
                     var devicePath = reader.ReadObjectPathAsString();
                     var passkey = reader.ReadUInt32();
+                    if (!await IsTargetDeviceAsync(devicePath))
+                    {
+                        context.ReplyError("org.bluez.Error.Rejected", "Not the device being paired");
+                        return;
+                    }
+
                     var name = await DescribeDeviceAsync(devicePath);
 
                     if (await ConfirmAsync(name, passkey.ToString("D6")))
@@ -341,6 +363,12 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                 {
                     var reader = context.Request.GetBodyReader();
                     var devicePath = reader.ReadObjectPathAsString();
+                    if (!await IsTargetDeviceAsync(devicePath))
+                    {
+                        context.ReplyError("org.bluez.Error.Rejected", "Not the device being paired");
+                        return;
+                    }
+
                     var name = await DescribeDeviceAsync(devicePath);
 
                     if (await ConfirmAsync(name, string.Empty))
@@ -351,17 +379,25 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                     return;
                 }
 
+                // Phones pair with numeric comparison; a fixed PIN/passkey would only help an attacker.
                 case "RequestPinCode":
-                    ReplyString(context, "0000");
+                case "RequestPasskey":
+                    context.ReplyError("org.bluez.Error.Rejected", "Fixed PIN pairing is not supported");
                     return;
 
-                case "RequestPasskey":
-                    ReplyUInt32(context, 0);
+                case "AuthorizeService":
+                {
+                    var devicePath = context.Request.GetBodyReader().ReadObjectPathAsString();
+                    if (await IsTargetDeviceAsync(devicePath))
+                        ReplyEmpty(context);
+                    else
+                        context.ReplyError("org.bluez.Error.Rejected", "Service not authorized");
+
                     return;
+                }
 
                 case "DisplayPinCode":
                 case "DisplayPasskey":
-                case "AuthorizeService":
                 case "Release":
                 case "Cancel":
                     ReplyEmpty(context);
@@ -392,6 +428,34 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
         catch (Exception ex)
         {
             logger.Error("Pairing confirmation failed.", ex);
+            return false;
+        }
+    }
+
+    /// <summary>True only for the device found by discovery, or while scanning, one that matches the phone being paired.</summary>
+    private async Task<bool> IsTargetDeviceAsync(string devicePath)
+    {
+        if (discoveredPath is not null)
+            return devicePath == discoveredPath;
+
+        var phone = scanTargetPhone;
+        if (phone is null)
+            return false;
+
+        try
+        {
+            var connection = await GetConnectionAsync(disposing.Token);
+            if (connection is null)
+                return false;
+
+            var objects = await ManagedObjectReader.QueryAsync(connection, BlueZService, "/", disposing.Token);
+            return objects.TryGetValue(devicePath, out var interfaces) &&
+                   interfaces.TryGetValue(DeviceInterface, out var properties) &&
+                   MatchesPhone(properties, phone, MatchLabels(phone).ToArray());
+        }
+        catch (Exception ex)
+        {
+            logger.Debug($"IsTargetDeviceAsync failed: {ex.Message}");
             return false;
         }
     }
@@ -454,19 +518,24 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
                 if (!interfaces.TryGetValue(DeviceInterface, out var properties))
                     continue;
 
-                var address = ManagedObjectReader.String(properties, "Address");
-                if (!string.IsNullOrWhiteSpace(phone.BluetoothAddress) &&
-                    string.Equals(address, phone.BluetoothAddress, StringComparison.OrdinalIgnoreCase))
-                    return (path, address);
-
-                if (MatchesAny(ManagedObjectReader.Describe(properties, "Alias", "Name"), labels))
-                    return (path, address);
+                if (MatchesPhone(properties, phone, labels))
+                    return (path, ManagedObjectReader.String(properties, "Address"));
             }
 
             await Task.Delay(1000, cancellationToken);
         }
 
         return null;
+    }
+
+    private static bool MatchesPhone(Dictionary<string, VariantValue> properties, PairedDevice phone, string[] labels)
+    {
+        var address = ManagedObjectReader.String(properties, "Address");
+        if (!string.IsNullOrWhiteSpace(phone.BluetoothAddress) &&
+            string.Equals(address, phone.BluetoothAddress, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return MatchesAny(ManagedObjectReader.Describe(properties, "Alias", "Name"), labels);
     }
 
     private IEnumerable<string> MatchLabels(PairedDevice phone)
@@ -683,20 +752,6 @@ public sealed class BluetoothPairingService : IBluetoothPairingService, IDisposa
     private static void ReplyEmpty(MethodContext context)
     {
         var writer = context.CreateReplyWriter(null);
-        context.Reply(writer.CreateMessage());
-    }
-
-    private static void ReplyString(MethodContext context, string value)
-    {
-        var writer = context.CreateReplyWriter("s");
-        writer.WriteString(value);
-        context.Reply(writer.CreateMessage());
-    }
-
-    private static void ReplyUInt32(MethodContext context, uint value)
-    {
-        var writer = context.CreateReplyWriter("u");
-        writer.WriteUInt32(value);
         context.Reply(writer.CreateMessage());
     }
 
