@@ -10,4 +10,6 @@ public enum BluetoothPairingStatus
     PhoneDiscoveryRequestDenied,
     DeviceNotFound,
     PairingFailed,
+    StaleBond,
+    ConnectFailed,
 }

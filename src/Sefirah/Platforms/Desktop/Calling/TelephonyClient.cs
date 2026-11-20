@@ -62,6 +62,10 @@ internal sealed class TelephonyClient : IDisposable
         {
             snapshot.ServiceAvailable = false;
         }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ref session, ex);
+        }
 
         try
         {
@@ -88,6 +92,10 @@ internal sealed class TelephonyClient : IDisposable
         catch (DBusErrorReplyException)
         {
             // BlueZ is optional here: the telephony service alone still drives calls.
+        }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ref system, ex);
         }
 
         return snapshot;
@@ -119,14 +127,32 @@ internal sealed class TelephonyClient : IDisposable
     private async Task InvokeAsync(string path, string @interface, string member, string signature,
         Action<MessageWriter>? writeBody, CancellationToken cancellationToken)
     {
+        session ??= await ConnectAsync(DBusAddress.Session);
         if (session is null)
             throw new DBusErrorReplyException("org.pipewire.Telephony.Error.Failed", "not connected to the session bus");
 
-        var writer = session.GetMessageWriter();
+        var connection = session;
+        var writer = connection.GetMessageWriter();
         writer.WriteMethodCallHeader(ServiceName, path, @interface, member, signature);
         writeBody?.Invoke(writer);
 
-        await session.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+        try
+        {
+            await connection.CallMethodAsync(writer.CreateMessage()).WaitAsync(CallTimeout, cancellationToken);
+        }
+        catch (DBusConnectionException ex)
+        {
+            DropConnection(ref connection, ex);
+            throw;
+        }
+    }
+
+    /// <summary>Drops a bus connection that died so the next query re-establishes it.</summary>
+    private static void DropConnection(ref DBusConnection? connection, DBusConnectionException ex)
+    {
+        var dead = connection;
+        connection = null;
+        dead?.Dispose();
     }
 
     private static async Task<DBusConnection?> ConnectAsync(string? address)

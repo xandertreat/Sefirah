@@ -16,7 +16,7 @@ public interface IBluetoothPairingService
 
     Task<bool> DiscoverAsync(PairedDevice phone, CancellationToken cancellationToken = default);
 
-    Task<bool> PairAsync(PairedDevice phone, Func<string, string, Task<bool>> confirmAsync, CancellationToken cancellationToken = default);
+    Task<bool> PairAsync(PairedDevice phone, Func<string, string, CancellationToken, Task<bool>> confirmAsync, CancellationToken cancellationToken = default);
 
     Task<bool> TryEnableBluetoothAsync();
 

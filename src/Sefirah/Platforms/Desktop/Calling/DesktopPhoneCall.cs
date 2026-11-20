@@ -62,7 +62,8 @@ internal sealed class DesktopPhoneCall : IPhoneCall
         var ended = mapped is CallingPhoneCallStatus.Ended or CallingPhoneCallStatus.Lost;
         var changed = mapped != status;
         status = mapped;
-        if (changed && !ended)
+        // Fire on the Ended/Lost transition too, so listeners can remove the call's toast and session.
+        if (changed)
             StatusChanged?.Invoke(this, EventArgs.Empty);
 
         return ended;

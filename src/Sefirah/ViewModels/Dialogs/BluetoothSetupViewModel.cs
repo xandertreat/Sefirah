@@ -27,7 +27,7 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
     #region Properties
 
     public bool ShowDialogFooter => !ShowInlinePairingPanel;
-    public bool ShowNoDevicesPanel => ShowBluetoothOffMessage || ShowDeviceNotFoundMessage || ShowPairingFailedMessage;
+    public bool ShowNoDevicesPanel => ShowBluetoothOffMessage || ShowDeviceNotFoundMessage || ShowPairingFailedMessage || ShowConnectFailedMessage;
 
     [ObservableProperty] public partial bool ShowIntroPanel { get; set; }
     [ObservableProperty] public partial bool ShowPhonePermissionRetry { get; set; }
@@ -36,6 +36,8 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
     [ObservableProperty] public partial bool ShowBluetoothOffMessage { get; set; }
     [ObservableProperty] public partial bool ShowDeviceNotFoundMessage { get; set; }
     [ObservableProperty] public partial bool ShowPairingFailedMessage { get; set; }
+    [ObservableProperty] public partial bool ShowConnectFailedMessage { get; set; }
+    [ObservableProperty] public partial bool ShowStaleBondMessage { get; set; }
     [ObservableProperty] public partial bool ShowPairingPanel { get; set; }
     [ObservableProperty] public partial bool ShowInlinePairingPanel { get; set; }
     [ObservableProperty] public partial string InlinePairingDeviceName { get; set; }
@@ -45,6 +47,7 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
     partial void OnShowBluetoothOffMessageChanged(bool value) => OnPropertyChanged(nameof(ShowNoDevicesPanel));
     partial void OnShowDeviceNotFoundMessageChanged(bool value) => OnPropertyChanged(nameof(ShowNoDevicesPanel));
     partial void OnShowPairingFailedMessageChanged(bool value) => OnPropertyChanged(nameof(ShowNoDevicesPanel));
+    partial void OnShowConnectFailedMessageChanged(bool value) => OnPropertyChanged(nameof(ShowNoDevicesPanel));
 
     #endregion
 
@@ -91,9 +94,11 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
         {
             operationCts?.Dispose();
             operationCts = null;
+            // The setup window is over either way: drop the pairing agent and close the adapter window.
+            bluetoothPairingService.Stop();
         }
     }
-    private async Task<bool> PresentInlinePairingAsync(string deviceName, string pin)
+    private async Task<bool> PresentInlinePairingAsync(string deviceName, string pin, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         await dispatcher.EnqueueAsync(() =>
@@ -104,6 +109,9 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
             ShowPairingPanel = false;
             ShowInlinePairingPanel = true;
         });
+
+        // BlueZ cancelled the pairing (phone aborted or timed out); resolve like a decline so the panel closes.
+        using var registration = cancellationToken.Register(() => tcs.TrySetResult(false));
 
         try
         {
@@ -165,6 +173,21 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
             return;
         }
 
+        if (s.Step is BluetoothPairingStep.Pairing && s.Status is BluetoothPairingStatus.StaleBond)
+        {
+            ShowPairingPanel = false;
+            ShowScanningPanel = true;
+            ShowStaleBondMessage = true;
+            return;
+        }
+
+        if (s.Step is BluetoothPairingStep.Pairing && s.Status is BluetoothPairingStatus.ConnectFailed)
+        {
+            ShowPairingPanel = false;
+            ShowConnectFailedMessage = true;
+            return;
+        }
+
         if (s.Step is BluetoothPairingStep.Pairing && s.Status is BluetoothPairingStatus.PairingFailed)
         {
             ShowPairingPanel = false;
@@ -181,6 +204,8 @@ public sealed partial class BluetoothSetupViewModel : BaseViewModel
         ShowBluetoothOffMessage = false;
         ShowDeviceNotFoundMessage = false;
         ShowPairingFailedMessage = false;
+        ShowConnectFailedMessage = false;
+        ShowStaleBondMessage = false;
         ShowPairingPanel = false;
         ShowInlinePairingPanel = false;
     }
