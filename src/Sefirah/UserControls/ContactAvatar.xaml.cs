@@ -197,13 +197,16 @@ public sealed partial class ContactAvatar : UserControl
     }
 
     private const double DarkStop = 0.74;
+    private const double LightStop = 1.22;
 
-    // Start from the gradient's dark stop and keep darkening until it reads against the middle of the gradient.
+    // Start from the gradient's dark stop and keep darkening until it reads against the lightest part of the gradient,
+    // which is the worst case for the text sitting over it.
     private static Color PlaceholderForeground(Color color)
     {
+        var lightest = Shade(color, LightStop);
         var factor = DarkStop;
         var shade = Shade(color, factor);
-        while (factor > 0 && ContrastRatio(shade, color) < 4.5)
+        while (factor > 0 && ContrastRatio(shade, lightest) < 4.5)
         {
             factor -= 0.04;
             shade = Shade(color, Math.Max(factor, 0));
@@ -234,7 +237,7 @@ public sealed partial class ContactAvatar : UserControl
         EndPoint = new Point(1, 1),
         GradientStops =
         {
-            new GradientStop { Color = Shade(color, 1.22), Offset = 0 },
+            new GradientStop { Color = Shade(color, LightStop), Offset = 0 },
             new GradientStop { Color = Shade(color, DarkStop), Offset = 1 }
         }
     };
