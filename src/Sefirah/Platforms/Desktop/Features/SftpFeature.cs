@@ -1,5 +1,8 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using CommunityToolkit.WinUI;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Sefirah.Data.Models;
 using Sefirah.Utils;
 using Windows.ApplicationModel.DataTransfer;
@@ -12,6 +15,12 @@ public partial class SftpFeature(
     IUserSettingsService userSettingsService) : ISftpFeature
 {
     private enum MountBackend { Gvfs, Sshfs }
+
+    // Per-Mount state: the host-key-change confirm+reset+retry happens at most once per Mount call.
+    private sealed class MountContext
+    {
+        public bool HostKeyHandled { get; set; }
+    }
 
     private readonly record struct DeviceSession(
         string Host,
@@ -59,21 +68,22 @@ public partial class SftpFeature(
         _sessions[device.Id] = new DeviceSession(device.Address, info);
 
         var preferSshfs = ShouldPreferSshfs();
+        var mountContext = new MountContext();
         if (preferSshfs)
         {
-            if (await TryMountSshfsAsync(device.Id, device.Address, info))
+            if (await TryMountSshfsAsync(device, device.Address, info, mountContext))
                 return;
 
             logger.Warn($"sshfs mount failed for {device.Name}, falling back to GVfs");
-            await TryMountGvfsAsync(device.Id, device.Address, info);
+            await TryMountGvfsAsync(device, device.Address, info, mountContext);
         }
         else
         {
-            if (await TryMountGvfsAsync(device.Id, device.Address, info))
+            if (await TryMountGvfsAsync(device, device.Address, info, mountContext))
                 return;
 
             logger.Warn($"GVfs mount failed for {device.Name}, falling back to sshfs");
-            await TryMountSshfsAsync(device.Id, device.Address, info);
+            await TryMountSshfsAsync(device, device.Address, info, mountContext);
         }
     }
 
@@ -181,14 +191,14 @@ public partial class SftpFeature(
         return Directory.Exists(fusePath) ? fusePath : null;
     }
 
-    private async Task<bool> TryMountGvfsAsync(string deviceId, string host, SftpServerInfo info)
+    private async Task<bool> TryMountGvfsAsync(PairedDevice device, string host, SftpServerInfo info, MountContext mountContext)
     {
         try
         {
             var mountUri = SftpUriHelper.CreateGvfsUri(host, info.Port, info.Username);
 
             // Trust on first use in the app's own file; a changed key aborts instead of being replaced.
-            if (!await AcceptHostKeyAsync(deviceId, host, info.Port, info.Username))
+            if (!await AcceptHostKeyAsync(device, host, info.Port, info.Username, mountContext))
                 return false;
             // gvfs's ssh reads ~/.ssh/known_hosts, so add (never remove) the now-verified host there too.
             await RunProcessWithStdinAsync("ssh", SshProbeArguments(host, info.Port, info.Username,
@@ -200,7 +210,7 @@ public partial class SftpFeature(
             {
                 if (errorOutput.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
                 {
-                    SetMounted(deviceId, MountBackend.Gvfs, mountUri);
+                    SetMounted(device.Id, MountBackend.Gvfs, mountUri);
                     return true;
                 }
 
@@ -208,7 +218,7 @@ public partial class SftpFeature(
                 return false;
             }
 
-            SetMounted(deviceId, MountBackend.Gvfs, mountUri);
+            SetMounted(device.Id, MountBackend.Gvfs, mountUri);
             logger.Info($"Mounted GVfs SFTP: {mountUri}");
             return true;
         }
@@ -219,42 +229,50 @@ public partial class SftpFeature(
         }
     }
 
-    private async Task<bool> TryMountSshfsAsync(string deviceId, string host, SftpServerInfo info)
+    private async Task<bool> TryMountSshfsAsync(PairedDevice device, string host, SftpServerInfo info, MountContext mountContext)
     {
         try
         {
-            var mountPoint = GetSshfsMountPoint(deviceId);
+            var mountPoint = GetSshfsMountPoint(device.Id);
             PrepareSshfsMountPoint(mountPoint);
 
             var remote = $"{info.Username}@{host}:/";
-            var (exitCode, errorOutput) = await RunProcessWithStdinAsync(
-                "sshfs",
-                [
-                    remote,
-                    mountPoint,
-                    "-p", info.Port.ToString(),
-                    "-s",
-                    "-o", "StrictHostKeyChecking=accept-new",
-                    "-o", $"UserKnownHostsFile={KnownHostsPath}",
-                    "-o", $"HostKeyAlias={HostKeyAlias(deviceId)}",
-                    "-o", "reconnect",
-                    "-o", "ServerAliveInterval=30",
-                    "-o", "password_stdin"
-                ],
-                info.Password);
-
-            if (exitCode != 0)
+            var arguments = new[]
             {
-                if (errorOutput.Contains("Host key verification failed", StringComparison.OrdinalIgnoreCase))
-                    logger.Warn($"SFTP host key for {deviceId} did not match the stored key (phone app reinstalled, or possible interception). Remove the '{HostKeyAlias(deviceId)}' line from {KnownHostsPath} to trust the new key.");
+                remote,
+                mountPoint,
+                "-p", info.Port.ToString(),
+                "-s",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", $"UserKnownHostsFile={KnownHostsPath}",
+                "-o", $"HostKeyAlias={HostKeyAlias(device.Id)}",
+                "-o", "reconnect",
+                "-o", "ServerAliveInterval=30",
+                "-o", "password_stdin"
+            };
+
+            while (true)
+            {
+                var (exitCode, errorOutput) = await RunProcessWithStdinAsync("sshfs", arguments, info.Password);
+
+                if (exitCode == 0)
+                {
+                    SetMounted(device.Id, MountBackend.Sshfs, mountPoint);
+                    logger.Info($"Mounted sshfs SFTP at {mountPoint}");
+                    return true;
+                }
+
+                if (IsHostKeyMismatch(errorOutput))
+                {
+                    logger.Warn($"SSH host key for {device.Name} did not match the stored key (phone app reinstalled, or possible interception)");
+                    if (await TryResetHostKeyAsync(mountContext, device))
+                        continue; // re-learn the new key via accept-new; one retry per Mount call
+                }
+
                 logger.Error($"Failed to mount sshfs SFTP {remote}: {errorOutput}");
                 try { Directory.Delete(mountPoint); } catch { /* ignore */ }
                 return false;
             }
-
-            SetMounted(deviceId, MountBackend.Sshfs, mountPoint);
-            logger.Info($"Mounted sshfs SFTP at {mountPoint}");
-            return true;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or FileNotFoundException)
         {
@@ -353,22 +371,135 @@ public partial class SftpFeature(
         "true"
     ];
 
-    private async Task<bool> AcceptHostKeyAsync(string deviceId, string host, int port, string username)
-    {
-        var (_, errorOutput) = await RunProcessWithStdinAsync(
-            "ssh",
-            SshProbeArguments(host, port, username,
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-o", $"UserKnownHostsFile={KnownHostsPath}",
-                "-o", $"HostKeyAlias={HostKeyAlias(deviceId)}"),
-            stdin: null);
+    private static bool IsHostKeyMismatch(string output) =>
+        output.Contains("REMOTE HOST IDENTIFICATION HAS CHANGED", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("Host key verification failed", StringComparison.OrdinalIgnoreCase);
 
-        if (!errorOutput.Contains("HOST IDENTIFICATION HAS CHANGED", StringComparison.OrdinalIgnoreCase) &&
-            !errorOutput.Contains("Host key verification failed", StringComparison.OrdinalIgnoreCase))
+    private async Task<bool> AcceptHostKeyAsync(PairedDevice device, string host, int port, string username, MountContext mountContext)
+    {
+        var arguments = SshProbeArguments(host, port, username,
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", $"UserKnownHostsFile={KnownHostsPath}",
+            "-o", $"HostKeyAlias={HostKeyAlias(device.Id)}");
+
+        var (exitCode, errorOutput) = await RunProcessWithStdinAsync("ssh", arguments, stdin: null);
+
+        if (exitCode == 0 || !IsHostKeyMismatch(errorOutput))
             return true;
 
-        logger.Warn($"SFTP host key for {deviceId} changed since it was first trusted (phone app reinstalled, or possible interception). Not mounting. Remove the '{HostKeyAlias(deviceId)}' line from {KnownHostsPath} to trust the new key.");
-        return false;
+        logger.Warn($"SSH host key for {device.Name} changed since it was first trusted (phone app reinstalled, or possible interception)");
+        if (!await TryResetHostKeyAsync(mountContext, device))
+            return false;
+
+        (exitCode, errorOutput) = await RunProcessWithStdinAsync("ssh", arguments, stdin: null);
+        if (exitCode != 0 && IsHostKeyMismatch(errorOutput))
+        {
+            logger.Error($"SSH host key for {device.Name} still does not match after trusting the new key");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Ask the user to trust a changed SSH host key and, if confirmed, drop the stored key
+    /// so the next connect re-learns it via accept-new. Never auto-trusts; at most one
+    /// confirm+reset+retry per Mount call.
+    /// </summary>
+    private async Task<bool> TryResetHostKeyAsync(MountContext mountContext, PairedDevice device)
+    {
+        if (mountContext.HostKeyHandled)
+        {
+            logger.Info($"Host key change for {device.Name} already handled this mount attempt");
+            return false;
+        }
+
+        mountContext.HostKeyHandled = true;
+
+        if (!await ConfirmHostKeyChangeAsync(device))
+        {
+            logger.Info($"SSH host key change for {device.Name} not trusted by user; not mounting");
+            return false;
+        }
+
+        if (!RemoveKnownHostsKey(HostKeyAlias(device.Id)))
+        {
+            logger.Error($"Failed to remove '{HostKeyAlias(device.Id)}' from {KnownHostsPath}; not mounting");
+            return false;
+        }
+
+        logger.Info($"New SSH host key for {device.Name} trusted; re-learning it via accept-new");
+        return true;
+    }
+
+    private async Task<bool> ConfirmHostKeyChangeAsync(PairedDevice device)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        await App.MainWindow.DispatcherQueue.EnqueueAsync(async () =>
+        {
+            try
+            {
+                var xamlRoot = App.MainWindow.Content?.XamlRoot;
+                if (xamlRoot is null)
+                {
+                    logger.Warn($"No window available to confirm SSH host key change for {device.Name}");
+                    tcs.SetResult(false);
+                    return;
+                }
+
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = xamlRoot,
+                    Title = "SftpHostKeyChange/Title".GetLocalizedResource(),
+                    Content = string.Format("SftpHostKeyChange/Body".GetLocalizedResource(), device.Name),
+                    PrimaryButtonText = "SftpHostKeyChange/TrustButton".GetLocalizedResource(),
+                    CloseButtonText = "SftpHostKeyChange/CancelButton".GetLocalizedResource(),
+                    // Cancel is the default so a stray Enter never trusts the new key.
+                    DefaultButton = ContentDialogButton.Close
+                };
+
+                tcs.SetResult(await dialog.ShowAsync() is ContentDialogResult.Primary);
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Failed to show host key change dialog for {device.Name}", ex);
+                tcs.SetResult(false);
+            }
+        });
+        return await tcs.Task;
+    }
+
+    private bool RemoveKnownHostsKey(string alias)
+    {
+        try
+        {
+            if (!File.Exists(KnownHostsPath))
+                return false;
+
+            var lines = File.ReadAllLines(KnownHostsPath);
+            var kept = lines.Where(line => !KnownHostsLineMatchesAlias(line, alias)).ToArray();
+            if (kept.Length == lines.Length)
+                return false;
+
+            File.WriteAllLines(KnownHostsPath, kept);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.Error($"Failed to remove '{alias}' from {KnownHostsPath}", ex);
+            return false;
+        }
+    }
+
+    // known_hosts line: ["@marker"] host-list keytype base64-key [comment]; drop only lines whose host-list field is exactly the alias.
+    private static bool KnownHostsLineMatchesAlias(string line, string alias)
+    {
+        if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+            return false;
+
+        var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var hostList = fields is [_, ..] && fields[0].StartsWith('@') ? fields.ElementAtOrDefault(1) : fields.FirstOrDefault();
+        return hostList is not null && hostList.Split(',').Contains(alias, StringComparer.Ordinal);
     }
 
     private static int RunProcess(string fileName, IEnumerable<string> arguments)
