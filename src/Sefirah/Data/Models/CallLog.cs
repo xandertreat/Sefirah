@@ -52,4 +52,35 @@ public partial class CallLog(Contact callContact) : ObservableObject
     }
 
     public string CallTypeAndDuration => string.IsNullOrWhiteSpace(FormattedDuration) ? $"{CallType}" : $"{CallType} · {FormattedDuration}";
+
+    // The icon font has only down-right and up-left arrows, so incoming and outgoing turn them a quarter.
+    private static readonly Dictionary<CallLogType, (string Glyph, double Angle, bool IsAlert)> CallTypeIcons = new()
+    {
+        [CallLogType.Incoming] = ("\uE741", 90, false),
+        [CallLogType.AnsweredExternally] = ("\uE741", 90, false),
+        [CallLogType.Outgoing] = ("\uE742", 90, false),
+        [CallLogType.Missed] = ("\uE741", 90, true),
+        [CallLogType.Rejected] = ("\uE778", 0, true),
+        [CallLogType.Blocked] = ("\uE8F8", 0, true),
+        [CallLogType.Voicemail] = ("\uE77C", 0, false),
+    };
+
+    public bool HasCallTypeIcon => CallTypeIcons.ContainsKey(CallType);
+
+    public string CallTypeGlyph => CallTypeIcons.TryGetValue(CallType, out var icon) ? icon.Glyph : string.Empty;
+
+    public double CallTypeGlyphAngle => CallTypeIcons.TryGetValue(CallType, out var icon) ? icon.Angle : 0;
+
+    public bool ShowNeutralIcon => CallTypeIcons.TryGetValue(CallType, out var icon) && !icon.IsAlert;
+
+    public bool ShowAlertIcon => CallTypeIcons.TryGetValue(CallType, out var icon) && icon.IsAlert;
+
+    public string CallTypeName => CallType switch
+    {
+        CallLogType.Incoming => "CallIncoming".GetLocalizedResource(),
+        CallLogType.Missed => "CallMissed".GetLocalizedResource(),
+        _ => $"{CallType}"
+    };
+
+    public string CallTypeDetail => HasCallTypeIcon ? FormattedDuration : CallTypeAndDuration;
 }

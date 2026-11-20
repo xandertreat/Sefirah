@@ -145,11 +145,37 @@
 
                                 <StackPanel Grid.Column="1" Spacing="2">
                                     <TextBlock Text="{x:Bind CallContact.DisplayName, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock
-                                        FontSize="12"
-                                        Opacity="0.7"
-                                        Text="{x:Bind CallTypeAndDuration, Mode=OneWay}"
-                                        TextTrimming="CharacterEllipsis" />
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="6"
+                                        AutomationProperties.Name="{x:Bind CallTypeAndDuration}"
+                                        ToolTipService.ToolTip="{x:Bind CallTypeName}">
+                                        <FontIcon
+                                            FontSize="12"
+                                            Glyph="{x:Bind CallTypeGlyph}"
+                                            RenderTransformOrigin="0.5,0.5"
+                                            Opacity="0.7"
+                                            Visibility="{x:Bind ShowNeutralIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <FontIcon.RenderTransform>
+                                                <RotateTransform Angle="{x:Bind CallTypeGlyphAngle}" />
+                                            </FontIcon.RenderTransform>
+                                        </FontIcon>
+                                        <FontIcon
+                                            FontSize="12"
+                                            Glyph="{x:Bind CallTypeGlyph}"
+                                            RenderTransformOrigin="0.5,0.5"
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                            Visibility="{x:Bind ShowAlertIcon, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                            <FontIcon.RenderTransform>
+                                                <RotateTransform Angle="{x:Bind CallTypeGlyphAngle}" />
+                                            </FontIcon.RenderTransform>
+                                        </FontIcon>
+                                        <TextBlock
+                                            FontSize="12"
+                                            Opacity="0.7"
+                                            Text="{x:Bind CallTypeDetail}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
                                 </StackPanel>
                                 <StackPanel
                                     Grid.Column="2"
