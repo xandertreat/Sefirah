@@ -2,6 +2,7 @@ using CommunityToolkit.WinUI;
 using Sefirah.Data.AppDatabase.Repository;
 using Sefirah.Data.Models;
 using Sefirah.Dialogs;
+using Sefirah.Platforms.Desktop.Services;
 
 namespace Sefirah.ViewModels;
 
@@ -41,25 +42,32 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     [ObservableProperty]
     public partial bool IsCallingSetupError { get; set; }
 
-    [ObservableProperty] 
+    [ObservableProperty]
     public partial string PhoneNumber { get; set; }
 
     partial void OnPhoneNumberChanged(string oldValue, string newValue)
     {
-        if (string.IsNullOrEmpty(newValue))
+        if (string.IsNullOrEmpty(newValue) || ActiveDevice is null)
         {
             DialContact = null;
             return;
         }
         
-        DialContact = contactRepository.LookupContact(ActiveDevice!.Id, newValue);
+        DialContact = contactRepository.LookupContact(ActiveDevice.Id, newValue);
     }
 
     [ObservableProperty]
     public partial CallLog? SelectedCallLog { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowDialerContact))]
+    [NotifyPropertyChangedFor(nameof(ShowDialerNumber))]
     public partial Contact? DialContact { get; set; }
+
+    // A number with no name behind it gets one row, not a name plus the same number again.
+    public bool ShowDialerContact => DialContact is { IsNumberOnly: false };
+
+    public bool ShowDialerNumber => !ShowDialerContact;
 
     private bool isLoadingCallLogs;
     public bool IsLoadingCallLogs
@@ -274,6 +282,7 @@ public sealed partial class CallsPageViewModel : BaseViewModel
     private void AppendDialKey(string? key)
     {
         if (string.IsNullOrEmpty(key)) return;
+        DialTonePlayer.Play(key[0]);
         ClearDialContactVisual();
         PhoneNumber += key;
     }

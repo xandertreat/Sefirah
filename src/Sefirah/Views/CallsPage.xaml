@@ -324,7 +324,6 @@
                         <controls:ContactAvatar
                             Width="68"
                             Height="68"
-                            UseThemePlaceholder="True"
                             Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}"
                             ImageProvider="{x:Bind ViewModel.DialContact.AvatarStream, Mode=OneWay}"
                             Initials="{x:Bind ViewModel.DialContact.Initials, Mode=OneWay}"
@@ -339,7 +338,7 @@
                         HorizontalAlignment="Center"
                         MaxWidth="300"
                         TextTrimming="CharacterEllipsis"
-                        Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}" />
+                        Visibility="{x:Bind ViewModel.ShowDialerContact, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                     <TextBlock
                         Text="{x:Bind ViewModel.PhoneNumber, Mode=OneWay}"
@@ -351,7 +350,7 @@
                         VerticalAlignment="Center"
                         TextTrimming="CharacterEllipsis"
                         MaxWidth="300"
-                        Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource InverseEmptyObjectToVisibilityConverter}}" />
+                        Visibility="{x:Bind ViewModel.ShowDialerNumber, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                     <TextBlock
                         Text="{x:Bind ViewModel.PhoneNumber, Mode=OneWay}"
@@ -361,9 +360,9 @@
                         TextTrimming="CharacterEllipsis"
                         MaxWidth="300"
                         Foreground="{ThemeResource TextFillColorSecondary}"
-                        Visibility="{x:Bind ViewModel.DialContact, Mode=OneWay, Converter={StaticResource EmptyObjectToVisibilityConverter}}" />
+                        Visibility="{x:Bind ViewModel.ShowDialerContact, Mode=OneWay, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
-                    <Grid ColumnSpacing="10" RowSpacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid x:Name="DialPad" ColumnSpacing="10" RowSpacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -375,42 +374,9 @@
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-
-                        <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource DialPadKeyStyle}" Content="1"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="1"/>
-                        <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource DialPadKeyStyle}" Content="2"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="2"/>
-                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource DialPadKeyStyle}" Content="3"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="3"/>
-
-                        <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource DialPadKeyStyle}" Content="4"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="4"/>
-                        <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource DialPadKeyStyle}" Content="5"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="5"/>
-                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource DialPadKeyStyle}" Content="6"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="6"/>
-
-                        <Button Grid.Row="2" Grid.Column="0" Style="{StaticResource DialPadKeyStyle}" Content="7"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="7"/>
-                        <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource DialPadKeyStyle}" Content="8"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="8"/>
-                        <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource DialPadKeyStyle}" Content="9"
-                            Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="9"/>
-
-                        <Button Grid.Row="3" Grid.Column="0" Style="{StaticResource DialPadKeyStyle}" Content="*"
-                                Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="*"/>
-                        <Button Grid.Row="3" Grid.Column="1" Style="{StaticResource DialPadKeyStyle}"
-                                Click="DialZeroButton_Click"
-                                Holding="DialZeroButton_Holding"
-                                RightTapped="DialZeroButton_RightTapped">
-                            <StackPanel Spacing="0" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="0" HorizontalAlignment="Center" />
-                                <TextBlock Text="+" FontSize="12" Opacity="0.75" HorizontalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
-                        <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource DialPadKeyStyle}" Content="#"
-                                Command="{x:Bind ViewModel.AppendDialKeyCommand}" CommandParameter="#"/>
                     </Grid>
+
+                    <!-- Keys are generated in code-behind so each one can carry its letters and hold menu. -->
 
                     <Grid HorizontalAlignment="Center" ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
@@ -425,8 +391,10 @@
                             Height="48"
                             CornerRadius="24"
                             HorizontalAlignment="Center"
+                            Background="#2E9E57"
+                            BorderBrush="#2E9E57"
                             IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
-                            <FontIcon Glyph="&#xE717;" FontSize="20"/>
+                            <FontIcon Glyph="&#xE717;" FontSize="20" Foreground="White"/>
                         </Button>
                         <RepeatButton
                             Grid.Column="2"
@@ -436,7 +404,7 @@
                             HorizontalAlignment="Center"
                             Delay="400"
                             Click="RepeatBackspaceButton_Click"
-                            IsEnabled="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource EmptyStringToObjectConverter}}">
+                            Visibility="{x:Bind ViewModel.PhoneNumber, Mode=OneWay, Converter={StaticResource StringVisibilityConverter}}">
                             <FontIcon Glyph="&#xE94F;" FontSize="16"/>
                         </RepeatButton>
                     </Grid>

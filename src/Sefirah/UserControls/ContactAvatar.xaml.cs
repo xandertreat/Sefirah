@@ -1,6 +1,9 @@
 using CommunityToolkit.WinUI.Helpers;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Foundation;
 using Windows.Storage.Streams;
+using Windows.UI;
 
 namespace Sefirah.UserControls;
 
@@ -177,16 +180,42 @@ public sealed partial class ContactAvatar : UserControl
             PlaceholderBorder.Background = Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush;
             PlaceholderBorder.BorderBrush = Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush;
             PlaceholderBorder.BorderThickness = new Thickness(1);
+            InitialsText.ClearValue(TextBlock.ForegroundProperty);
+            PersonGlyphIcon.ClearValue(IconElement.ForegroundProperty);
+            GroupGlyphIcon.ClearValue(IconElement.ForegroundProperty);
             return;
         }
 
-        PlaceholderBorder.ClearValue(Border.BackgroundProperty);
-        PlaceholderBorder.ClearValue(Border.BorderBrushProperty);
-        PlaceholderBorder.BorderThickness = new Thickness(0);
-        PlaceholderBorder.Background = string.IsNullOrWhiteSpace(PlaceholderColorHex)
-            ? null
-            : new SolidColorBrush(PlaceholderColorHex.ToColor());
+        var hasColor = !string.IsNullOrWhiteSpace(PlaceholderColorHex);
+        var baseColor = hasColor ? PlaceholderColorHex.ToColor() : default;
+        PlaceholderBorder.Background = hasColor ? CreateGradient(baseColor) : null;
+
+        // Off-white everywhere: the soft palette carries it without the harshness of pure white.
+        var foreground = hasColor ? new SolidColorBrush(PlaceholderForeground) : null;
+        InitialsText.Foreground = foreground;
+        PersonGlyphIcon.Foreground = foreground;
+        GroupGlyphIcon.Foreground = foreground;
     }
+
+    private static readonly Color PlaceholderForeground = Color.FromArgb(255, 0xF7, 0xF3, 0xEE);
+
+    // A two stop gradient of the contact colour reads as a designed avatar rather than a flat swatch.
+    private static LinearGradientBrush CreateGradient(Color color) => new()
+    {
+        StartPoint = new Point(0, 0),
+        EndPoint = new Point(1, 1),
+        GradientStops =
+        {
+            new GradientStop { Color = Shade(color, 1.22), Offset = 0 },
+            new GradientStop { Color = Shade(color, 0.74), Offset = 1 }
+        }
+    };
+
+    private static Color Shade(Color color, double factor) => Color.FromArgb(
+        color.A,
+        (byte)Math.Clamp(color.R * factor, 0, 255),
+        (byte)Math.Clamp(color.G * factor, 0, 255),
+        (byte)Math.Clamp(color.B * factor, 0, 255));
 
     private void UpdatePlaceholderContent()
     {

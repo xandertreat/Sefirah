@@ -1,6 +1,14 @@
 using Microsoft.UI.Input;
+using Microsoft.UI.Text;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
+using Windows.Foundation;
 using Sefirah.Data.Models;
+using Sefirah.Platforms.Desktop.Services;
 using Sefirah.ViewModels;
 using Windows.System;
 using Windows.UI.Core;
@@ -10,17 +18,29 @@ namespace Sefirah.Views;
 public sealed partial class CallsPage : Page
 {
     public CallsPageViewModel ViewModel { get; }
-    private bool suppressZeroClick;
+
+    // Characters printed under each key. Null means the key carries none.
+    private static readonly (string Key, string? Characters)[] DialKeys =
+    [
+        ("1", null), ("2", "ABC"), ("3", "DEF"),
+        ("4", "GHI"), ("5", "JKL"), ("6", "MNO"),
+        ("7", "PQRS"), ("8", "TUV"), ("9", "WXYZ"),
+        ("*", null), ("0", "+"), ("#", null),
+    ];
 
     public CallsPage()
     {
         InitializeComponent();
+        BuildDialPad();
+        AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
         ViewModel = Ioc.Default.GetRequiredService<CallsPageViewModel>();
         DataContext = ViewModel;
         Loaded += (_, _) =>
         {
             UpdatePaneLayout();
             HookWindowKeys(true);
+            if (XamlRoot?.Content is UIElement rootContent)
+                rootContent.AddHandler(PointerPressedEvent, new PointerEventHandler(OnRootPointerPressed), true);
         };
         Unloaded += (_, _) => HookWindowKeys(false);
     }
@@ -176,10 +196,17 @@ public sealed partial class CallsPage : Page
 
     private void CallLogs_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is CallLog callLog)
+        if (e.ClickedItem is not CallLog callLog)
         {
-            ViewModel.ToggleSelectingCallLog(callLog);
+            return;
         }
+
+        ViewModel.ToggleSelectingCallLog(callLog);
+
+        // Same as picking a contact in the search box: fill the dialer with the row's own contact,
+        // so the name and picture match the list instead of whatever a number lookup finds.
+        ViewModel.ApplyContactToDialer(callLog.CallContact);
+        ShowDialer();
     }
 
     private async void CallLogItemCallButton_Click(object sender, RoutedEventArgs e)
@@ -191,33 +218,253 @@ public sealed partial class CallsPage : Page
         await ViewModel.DialSelectedCallLogAsync(callLog);
     }
 
-    private void DialZeroButton_Click(object sender, RoutedEventArgs e)
+    private void BuildDialPad()
     {
-        if (suppressZeroClick)
+        for (var i = 0; i < DialKeys.Length; i++)
         {
-            suppressZeroClick = false;
+            var (key, characters) = DialKeys[i];
+
+            var label = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            label.Children.Add(new TextBlock { Text = key, HorizontalAlignment = HorizontalAlignment.Center });
+            if (!string.IsNullOrEmpty(characters))
+            {
+                label.Children.Add(new TextBlock
+                {
+                    Text = characters,
+                    FontSize = 10,
+                    Opacity = 0.75,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                });
+            }
+
+            var button = new Button { Style = (Style)Resources["DialPadKeyStyle"], Content = label };
+            Grid.SetRow(button, i / 3);
+            Grid.SetColumn(button, i % 3);
+            HookCharacterHold(button, key, characters);
+            DialPad.Children.Add(button);
+        }
+    }
+
+    // A click types the key; holding it or right-clicking offers the characters printed under it.
+    private void HookCharacterHold(Button button, string key, string? characters)
+    {
+        var held = false;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            held = true;
+            ShowCharacters(button, key, characters);
+        };
+
+        button.PointerPressed += (_, e) =>
+        {
+            held = false;
+
+            // Right click is detected here rather than from RightTapped, which is not raised for
+            // every pointer source.
+            if (e.GetCurrentPoint(button).Properties.IsRightButtonPressed)
+            {
+                timer.Stop();
+                held = true;
+                Logger.LogInformation("Key {Key} right pressed", key);
+                ShowCharacters(button, key, characters);
+                return;
+            }
+
+            timer.Start();
+        };
+        button.PointerReleased += (_, _) => timer.Stop();
+        button.PointerCanceled += (_, _) => timer.Stop();
+        button.PointerCaptureLost += (_, _) => timer.Stop();
+        button.Click += (_, _) =>
+        {
+            // Click can arrive after the timer has already opened the menu, so it stops here too.
+            timer.Stop();
+            Logger.LogInformation("Key {Key} clicked held={Held}", key, held);
+            if (held)
+            {
+                held = false;
+                return;
+            }
+
+            ViewModel.AppendDialKeyCommand.Execute(key);
+        };
+        button.RightTapped += (_, e) =>
+        {
+            e.Handled = true;
+            ShowCharacters(button, key, characters);
+        };
+    }
+
+    private Popup? characterPopup;
+    private int cardAnimation;
+    private readonly ILogger Logger = Ioc.Default.GetRequiredService<ILogger<CallsPage>>();
+
+    // Held or right-clicked keys open their characters as cubes that grow out of the key.
+    private void ShowCharacters(Button button, string key, string? characters)
+    {
+        if (string.IsNullOrEmpty(characters))
+            return;
+
+        HideCharacters(animate: false);
+
+        var cubes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        foreach (var character in characters)
+        {
+            var cube = new Button
+            {
+                Content = character.ToString(),
+                Width = 48,
+                Height = 48,
+                Padding = new Thickness(0),
+                FontSize = 20,
+                FontWeight = FontWeights.SemiBold,
+                CornerRadius = new CornerRadius(12),
+                Background = ThemeBrush("SubtleFillColorSecondaryBrush"),
+                BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+                BorderThickness = new Thickness(1),
+            };
+            cube.Click += (_, _) =>
+            {
+                DialTonePlayer.Play(key[0]); // the tone follows the key, not the letter
+                ViewModel.AppendDialKeyCommand.Execute(character.ToString());
+                HideCharacters(animate: true);
+            };
+            cubes.Children.Add(cube);
+        }
+
+        var card = new Border
+        {
+            Child = cubes,
+            Padding = new Thickness(8),
+            CornerRadius = new CornerRadius(16),
+            Background = ThemeBrush("AcrylicInAppFillColorDefaultBrush") ?? ThemeBrush("CardBackgroundFillColorDefaultBrush"),
+            BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush"),
+            BorderThickness = new Thickness(1),
+            RenderTransformOrigin = new Point(0.5, 1),
+            RenderTransform = new CompositeTransform(),
+        };
+        card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+        var origin = button.TransformToVisual(null).TransformPoint(new Point(0, 0));
+        characterPopup = new Popup
+        {
+            Child = card,
+            XamlRoot = XamlRoot,
+            HorizontalOffset = Math.Max(8, origin.X + ((button.ActualWidth - card.DesiredSize.Width) / 2)),
+            VerticalOffset = Math.Max(8, origin.Y - card.DesiredSize.Height - 10),
+        };
+        characterPopup.Closed += (_, _) => characterPopup = null;
+
+        Logger.LogInformation("Character menu for {Key}: {Width}x{Height} cubes at {X},{Y}",
+            key, card.DesiredSize.Width, card.DesiredSize.Height, origin.X, origin.Y);
+
+        card.Opacity = 0;
+        SetScale(card, 0.82);
+
+        var opened = false;
+        card.Loaded += (_, _) =>
+        {
+            // Wait for layout: animating a card that has no size yet is what made it jitter.
+            if (opened || characterPopup is null)
+                return;
+
+            opened = true;
+            AnimateCard(card, 0.82, 1, 0, 1, 150, EaseOutCubic);
+        };
+
+        characterPopup.IsOpen = true;
+    }
+
+    private void HideCharacters(bool animate)
+    {
+        if (characterPopup is not { } popup)
+            return;
+
+        characterPopup = null;
+        if (!animate || popup.Child is not Border card)
+        {
+            popup.IsOpen = false;
             return;
         }
 
-        ViewModel.PhoneNumber += "0";
+        // The reverse of the open, at twice the speed: the card settles back into the key.
+        AnimateCard(card, 1, 0.82, card.Opacity, 0, 75, EaseInCubic, () => popup.IsOpen = false);
     }
 
-    private void DialZeroButton_Holding(object sender, HoldingRoutedEventArgs e)
+    private static double EaseOutCubic(double progress) => 1 - Math.Pow(1 - progress, 3);
+
+    private static double EaseInCubic(double progress) => progress * progress * progress;
+
+    // Driven frame by frame: the compositor animation path is not dependable under Uno/Skia, where a
+    // Storyboard on a transform can silently do nothing and leave the card fully open or invisible.
+    private void AnimateCard(Border card, double fromScale, double toScale, double fromOpacity, double toOpacity, int milliseconds, Func<double, double> easing, Action? completed = null)
     {
-        if (e.HoldingState is HoldingState.Completed)
+        var generation = ++cardAnimation;
+        var started = Stopwatch.StartNew();
+
+        void Step()
         {
-            suppressZeroClick = true;
-            ViewModel.PhoneNumber += "+";
-            e.Handled = true;
+            if (generation != cardAnimation)
+                return;
+
+            var progress = Math.Clamp(started.ElapsedMilliseconds / (double)milliseconds, 0, 1);
+            var eased = easing(progress);
+
+            card.Opacity = fromOpacity + ((toOpacity - fromOpacity) * eased);
+            SetScale(card, fromScale + ((toScale - fromScale) * eased));
+
+            if (progress < 1)
+                DispatcherQueue.TryEnqueue(Step);
+            else
+                completed?.Invoke();
+        }
+
+        Step();
+    }
+
+    private static void SetScale(Border card, double scale)
+    {
+        if (card.RenderTransform is CompositeTransform transform)
+        {
+            transform.ScaleX = scale;
+            transform.ScaleY = scale;
         }
     }
 
-    private void DialZeroButton_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    // Nothing else dismisses the menu, so the root content is watched too: a press on the pad or
+    // anywhere else has to take it down.
+    private void OnRootPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        suppressZeroClick = true;
-        ViewModel.PhoneNumber += "+";
-        e.Handled = true;
+        if (characterPopup is not { Child: Border card } popup)
+            return;
+
+        if (e.OriginalSource is DependencyObject source && IsInside(source, card))
+            return;
+
+        Logger.LogInformation("Character menu dismissed by outside press");
+        popup.IsOpen = false;
+        characterPopup = null;
     }
+
+    private static bool IsInside(DependencyObject source, DependencyObject container)
+    {
+        for (var node = source; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, container))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static Brush? ThemeBrush(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value) ? value as Brush : null;
 
     private void RepeatBackspaceButton_Click(object sender, RoutedEventArgs e)
     {
