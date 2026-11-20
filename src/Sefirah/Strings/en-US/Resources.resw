@@ -1145,4 +1145,16 @@ input text %pwd%</value>
   <data name="DeleteMediaBody" xml:space="preserve">
     <value>{0} will be removed from the phone. This cannot be undone.</value>
   </data>
+  <data name="SftpHostKeyChange.Title" xml:space="preserve">
+    <value>SSH host key changed</value>
+  </data>
+  <data name="SftpHostKeyChange.Body" xml:space="preserve">
+    <value>The SSH host key of {0} changed. This is expected after reinstalling the phone app, but can also mean someone is intercepting the connection. Trust the new key?</value>
+  </data>
+  <data name="SftpHostKeyChange.TrustButton" xml:space="preserve">
+    <value>Trust new key</value>
+  </data>
+  <data name="SftpHostKeyChange.CancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
 </root>
