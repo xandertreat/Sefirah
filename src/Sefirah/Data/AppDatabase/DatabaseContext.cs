@@ -90,7 +90,7 @@ public class DatabaseContext
 
         const UnixFileMode OwnerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         if (createIfMissing && !File.Exists(databasePath))
-            File.Create(databasePath).Dispose();
+            new FileStream(databasePath, new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, UnixCreateMode = OwnerOnly }).Dispose();
 
         var directory = Path.GetDirectoryName(databasePath)!;
         foreach (var file in Directory.EnumerateFiles(directory, Path.GetFileName(databasePath) + "*"))
