@@ -349,7 +349,15 @@ public partial class App : Application
         if (MainWindow.Content is not FrameworkElement content)
             return;
 
-        new Platforms.Desktop.Accessibility.AtspiServer(content).Start();
+        // The bridge is optional; nothing it does may take the app down with it.
+        try
+        {
+            new Platforms.Desktop.Accessibility.AtspiServer(content).Start();
+        }
+        catch (Exception ex)
+        {
+            Ioc.Default.GetService<Microsoft.Extensions.Logging.ILogger>()?.LogError(ex, "Could not start the accessibility bridge");
+        }
     }
 
     /// <summary>

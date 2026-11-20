@@ -44,7 +44,7 @@ internal static class AtspiSemantics
     private const int StateActive = 1;
     private const int StateBusy = 3;
     private const int StateChecked = 4;
-    private const int StateDefunct = 6;
+    public const int StateDefunct = 6;
     private const int StateEditable = 7;
     private const int StateEnabled = 8;
     private const int StateExpandable = 9;
@@ -157,11 +157,12 @@ internal static class AtspiSemantics
 
     public static uint[] Pack(params int[] bits)
     {
-        var words = new ulong[1];
+        // AT-SPI states are always two 32-bit words; libatspi drops the set when the count differs.
+        var words = new uint[2];
         foreach (var bit in bits)
-            words[bit / 32] |= 1UL << bit;
+            words[bit / 32] |= 1u << (bit % 32);
 
-        return words.Select(static value => (uint)value).ToArray();
+        return words;
     }
 
     /// <summary>
@@ -169,9 +170,9 @@ internal static class AtspiSemantics
     /// </summary>
     public static uint[] States(AutomationPeer peer)
     {
-        var bits = new ulong[1];
+        var bits = new List<int>();
 
-        void Set(int bit) => bits[0] |= 1UL << bit;
+        void Set(int bit) => bits.Add(bit);
 
         if (peer.IsEnabled())
         {
@@ -221,7 +222,7 @@ internal static class AtspiSemantics
         if (peer.GetAutomationControlType() is AutomationControlType.ProgressBar)
             Set(StateBusy);
 
-        return bits.Select(static value => (uint)value).ToArray();
+        return Pack(bits.ToArray());
     }
 
     public static bool IsShowing(AutomationPeer peer)

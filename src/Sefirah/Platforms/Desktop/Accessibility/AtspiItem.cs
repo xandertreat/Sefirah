@@ -1,4 +1,3 @@
-using Microsoft.UI.Xaml.Automation.Peers;
 using Tmds.DBus.Protocol;
 
 namespace Sefirah.Platforms.Desktop.Accessibility;
@@ -40,10 +39,6 @@ internal static class AtspiItem
 
     public static Item ForNode(AtspiServer server, AtspiNode node)
     {
-        var (role, _) = node.Peer is { } peer
-            ? AtspiSemantics.Describe(peer)
-            : (AtspiSemantics.RolePanel, AtspiSemantics.RoleName(AtspiSemantics.RolePanel));
-
         var parentRef = node.Parent is { } parent ? server.Ref(parent.Id) : server.ApplicationRef;
 
         return new Item(
@@ -52,11 +47,11 @@ internal static class AtspiItem
             parentRef,
             node.Parent?.Children.FindIndex(sibling => sibling.Id == node.Id) ?? 0,
             node.Children.Count,
-            Interfaces(node.Peer),
-            node.Peer is { } owner ? AtspiSemantics.Name(owner) : string.Empty,
-            role,
-            node.Peer is { } described ? AtspiSemantics.Description(described) : string.Empty,
-            node.Peer is { } statesOwner ? AtspiSemantics.States(statesOwner) : []);
+            Interfaces(node),
+            node.Name,
+            node.Role,
+            node.Description,
+            node.States);
     }
 
     public static void Write(ref MessageWriter writer, Item item)
@@ -92,15 +87,12 @@ internal static class AtspiItem
         writer.WriteObjectPath(reference.Path);
     }
 
-    private static string[] Interfaces(AutomationPeer? peer)
+    private static string[] Interfaces(AtspiNode node)
     {
-        if (peer is null)
-            return ["org.a11y.atspi.Accessible", "org.a11y.atspi.Component"];
-
         var interfaces = new List<string> { "org.a11y.atspi.Accessible", "org.a11y.atspi.Component" };
-        if (AtspiSemantics.CanInvoke(peer))
+        if (node.CanInvoke)
             interfaces.Add("org.a11y.atspi.Action");
-        if (AtspiSemantics.HasText(peer))
+        if (node.HasText)
             interfaces.Add("org.a11y.atspi.Text");
 
         return interfaces.ToArray();

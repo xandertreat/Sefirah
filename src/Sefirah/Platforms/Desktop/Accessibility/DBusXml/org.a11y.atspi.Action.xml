@@ -5,11 +5,15 @@
     <method name="GetActions">
       <arg name="actions" type="a(sss)" direction="out"/>
     </method>
-    <method name="GetActionName">
+    <method name="GetName">
       <arg name="index" type="i" direction="in"/>
       <arg name="name" type="s" direction="out"/>
     </method>
-    <method name="GetActionDescription">
+    <method name="GetLocalizedName">
+      <arg name="index" type="i" direction="in"/>
+      <arg name="name" type="s" direction="out"/>
+    </method>
+    <method name="GetDescription">
       <arg name="index" type="i" direction="in"/>
       <arg name="description" type="s" direction="out"/>
     </method>

@@ -25,7 +25,7 @@ internal sealed class AtspiRootHandler : DBusHandler,
 
     public string Description => "Sefirah";
 
-    public (string, ObjectPath) Parent => server.ApplicationRef;
+    public (string, ObjectPath) Parent => ("org.a11y.atspi.Registry", new ObjectPath(AtspiServer.ApplicationPath));
 
     public int ChildCount => Window is null ? 0 : 1;
 
@@ -77,6 +77,8 @@ internal sealed class AtspiRootHandler : DBusHandler,
     public ValueTask<Dictionary<string, string>> GetAttributesAsync()
         => ValueTask.FromResult(new Dictionary<string, string> { ["toolkit"] = "uno" });
 
+    public ValueTask<(uint, (string, ObjectPath)[])[]> GetRelationSetAsync() => ValueTask.FromResult(Array.Empty<(uint, (string, ObjectPath)[])>());
+
     public ValueTask<(string, ObjectPath)> GetApplicationAsync() => ValueTask.FromResult(server.ApplicationRef);
 
     public ValueTask<string[]> GetInterfacesAsync()
@@ -95,8 +97,10 @@ internal sealed class AtspiRootHandler : DBusHandler,
 
     public ValueTask HandleSetPropertyAsync(DBus.IApplicationHandler.SetPropertyContext context) => default;
 
-    public ValueTask<string> GetApplicationBusAddressAsync()
-        => ValueTask.FromResult(server.Address ?? string.Empty);
+    // This is the address of a private peer-to-peer server; we have none. Returning the a11y bus
+    // address made libatspi open a raw connection to the bus, whose calls never got a reply, and
+    // the app showed up as '' / ROLE_INVALID. Empty means "talk to me over the bus".
+    public ValueTask<string> GetApplicationBusAddressAsync() => ValueTask.FromResult(string.Empty);
 
     public ValueTask<string> GetLocaleAsync(uint lctype)
         => ValueTask.FromResult(CultureInfo.CurrentUICulture.Name);
@@ -111,19 +115,17 @@ internal sealed class AtspiRootHandler : DBusHandler,
         => GetChildAtIndexAsync(0);
 
     public ValueTask<(int, int, int, int)> GetExtentsAsync(uint coordType)
-        => Window is { Peer: { } peer }
-            ? ValueTask.FromResult(ToInts(AtspiSemantics.Bounds(peer)))
-            : ValueTask.FromResult((0, 0, 0, 0));
+        => ValueTask.FromResult(ToInts(Window?.Bounds ?? default));
 
     public ValueTask<(int, int)> GetPositionAsync(uint coordType)
     {
-        var (x, y, _, _) = ToInts(Window is { Peer: { } peer } ? AtspiSemantics.Bounds(peer) : (0, 0, 0, 0));
+        var (x, y, _, _) = ToInts(Window?.Bounds ?? default);
         return ValueTask.FromResult((x, y));
     }
 
     public ValueTask<(int, int)> GetSizeAsync()
     {
-        var (_, _, width, height) = ToInts(Window is { Peer: { } peer } ? AtspiSemantics.Bounds(peer) : (0, 0, 0, 0));
+        var (_, _, width, height) = ToInts(Window?.Bounds ?? default);
         return ValueTask.FromResult((width, height));
     }
 

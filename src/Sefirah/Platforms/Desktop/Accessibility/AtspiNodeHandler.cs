@@ -31,14 +31,14 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     private AutomationPeer? Peer => Node?.Peer;
 
-    private bool HasAction => Peer is { } peer && AtspiSemantics.CanInvoke(peer);
+    private bool HasAction => Node?.CanInvoke ?? false;
 
-    private bool HasText => Peer is { } peer && AtspiSemantics.HasText(peer);
+    private bool HasText => Node?.HasText ?? false;
 
     protected override bool SupportsInterface(DBusInterface dbusInterface, ReadOnlySpan<char> path)
         => dbusInterface switch
         {
-            DBusInterface.OrgA11yAtspiComponent => Peer is not null,
+            DBusInterface.OrgA11yAtspiComponent => Node is not null,
             DBusInterface.OrgA11yAtspiAction => HasAction,
             DBusInterface.OrgA11yAtspiText => HasText,
             _ => true,
@@ -46,9 +46,9 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     #region Accessible
 
-    public string Name => Peer is { } peer ? AtspiSemantics.Name(peer) : string.Empty;
+    public string Name => Node?.Name ?? string.Empty;
 
-    public string Description => Peer is { } peer ? AtspiSemantics.Description(peer) : string.Empty;
+    public string Description => Node?.Description ?? string.Empty;
 
     public (string, ObjectPath) Parent
     {
@@ -105,40 +105,29 @@ internal sealed class AtspiNodeHandler : DBusHandler,
         return ValueTask.FromResult(siblings.FindIndex(sibling => sibling.Id == node.Id));
     }
 
-    public ValueTask<uint> GetRoleAsync()
-    {
-        var (role, _) = Peer is { } peer
-            ? AtspiSemantics.Describe(peer)
-            : (AtspiSemantics.RolePanel, AtspiSemantics.RoleName(AtspiSemantics.RolePanel));
-
-        return ValueTask.FromResult(role);
-    }
+    public ValueTask<uint> GetRoleAsync() => ValueTask.FromResult(Node?.Role ?? AtspiSemantics.RolePanel);
 
     public ValueTask<string> GetRoleNameAsync()
-    {
-        var (_, name) = Peer is { } peer
-            ? AtspiSemantics.Describe(peer)
-            : (AtspiSemantics.RolePanel, AtspiSemantics.RoleName(AtspiSemantics.RolePanel));
-
-        return ValueTask.FromResult(name);
-    }
+        => ValueTask.FromResult(AtspiSemantics.RoleName(Node?.Role ?? AtspiSemantics.RolePanel));
 
     public ValueTask<string> GetLocalizedRoleNameAsync() => GetRoleNameAsync();
 
     public ValueTask<uint[]> GetStateAsync()
-        => ValueTask.FromResult(Peer is { } peer ? AtspiSemantics.States(peer) : []);
+        => ValueTask.FromResult(Node?.States ?? AtspiSemantics.Pack(AtspiSemantics.StateDefunct));
 
     public ValueTask<Dictionary<string, string>> GetAttributesAsync()
     {
         var attributes = new Dictionary<string, string>();
-        if (Peer is { } peer)
+        if (Node is { } node)
         {
             attributes["toolkit"] = "uno";
-            attributes["class"] = peer.GetClassName() ?? string.Empty;
+            attributes["class"] = node.ClassName;
         }
 
         return ValueTask.FromResult(attributes);
     }
+
+    public ValueTask<(uint, (string, ObjectPath)[])[]> GetRelationSetAsync() => ValueTask.FromResult(Array.Empty<(uint, (string, ObjectPath)[])>());
 
     public ValueTask<(string, ObjectPath)> GetApplicationAsync() => ValueTask.FromResult(server.ApplicationRef);
 
@@ -171,10 +160,7 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
         foreach (var child in node.Children)
         {
-            if (server.Tree.Get(child.Id) is not { } childNode || childNode.Peer is null)
-                continue;
-
-            var (left, top, width, height) = AtspiSemantics.Bounds(childNode.Peer);
+            var (left, top, width, height) = child.Bounds;
             if (x >= left && x <= left + width && y >= top && y <= top + height)
                 return ValueTask.FromResult(server.Ref(child.Id));
         }
@@ -205,11 +191,10 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     private (int X, int Y, int Width, int Height) Extents()
     {
-        var peer = Peer;
-        if (peer is null)
+        if (Node is not { } node)
             return (0, 0, 0, 0);
 
-        var (x, y, width, height) = AtspiSemantics.Bounds(peer);
+        var (x, y, width, height) = node.Bounds;
         return ((int)x, (int)y, (int)width, (int)height);
     }
 
@@ -233,9 +218,11 @@ internal sealed class AtspiNodeHandler : DBusHandler,
         return ValueTask.FromResult(new[] { ("click", "click", string.Empty) });
     }
 
-    public ValueTask<string> GetActionNameAsync(int index) => ValueTask.FromResult(index == 0 ? "click" : string.Empty);
+    public ValueTask<string> GetNameAsync(int index) => ValueTask.FromResult(index == 0 ? "click" : string.Empty);
 
-    public ValueTask<string> GetActionDescriptionAsync(int index) => ValueTask.FromResult(string.Empty);
+    public ValueTask<string> GetLocalizedNameAsync(int index) => GetNameAsync(index);
+
+    public ValueTask<string> GetDescriptionAsync(int index) => ValueTask.FromResult(string.Empty);
 
     public ValueTask<string> GetKeyBindingAsync(int index) => ValueTask.FromResult(string.Empty);
 
@@ -251,7 +238,7 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     #region Text
 
-    public string Text => Peer is { } peer ? AtspiSemantics.Text(peer) : string.Empty;
+    public string Text => Node?.Text ?? string.Empty;
 
     public int CharacterCount => Text.Length;
 

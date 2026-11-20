@@ -33,8 +33,6 @@ internal sealed class AtspiServer : IDisposable
 
     private static ILogger? Logger => Ioc.Default.GetService<ILogger>();
 
-    public string? Address { get; private set; }
-
     public (string, ObjectPath) ApplicationRef => Ref(ApplicationPath);
 
     public (string, ObjectPath) Ref(string path) => (connection?.UniqueName ?? string.Empty, new ObjectPath(path));
@@ -86,7 +84,6 @@ internal sealed class AtspiServer : IDisposable
             var bus = new DBusConnection(address);
             await bus.ConnectAsync().AsTask().WaitAsync(ConnectTimeout).ConfigureAwait(false);
             connection = bus;
-            Address = address;
 
             bus.AddMethodHandler(new AtspiRootHandler(bus, this));
             bus.AddMethodHandler(new AtspiCacheHandler(bus, this));

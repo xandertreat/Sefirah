@@ -12,6 +12,9 @@
     <method name="GetIndexInParent">
       <arg name="index" type="i" direction="out"/>
     </method>
+    <method name="GetRelationSet">
+      <arg name="relations" type="a(ua(so))" direction="out"/>
+    </method>
     <method name="GetRole">
       <arg name="role" type="u" direction="out"/>
     </method>
