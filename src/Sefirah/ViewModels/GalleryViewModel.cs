@@ -230,8 +230,16 @@ public sealed partial class GalleryViewModel : BaseViewModel
             {
                 await thumbnailGate.WaitAsync(token);
                 acquired = true;
-                if (await DecodeThumbnailAsync(item.Path) is { } source)
-                    dispatcher.TryEnqueue(() => item.Thumbnail = source);
+                if (await DecodeThumbnailAsync(item.Path) is { } jpeg)
+                    dispatcher.TryEnqueue(async () =>
+                    {
+                        // A BitmapImage built off the UI thread never renders in Uno, so only the tiny
+                        // already-resized JPEG is decoded here.
+                        var thumbnail = new BitmapImage();
+                        using var stream = new MemoryStream(jpeg);
+                        await thumbnail.SetSourceAsync(stream.AsRandomAccessStream());
+                        item.Thumbnail = thumbnail;
+                    });
                 else
                     Logger.Warn($"Could not decode a thumbnail for {item.Name}");
             }
@@ -252,11 +260,11 @@ public sealed partial class GalleryViewModel : BaseViewModel
     }
 
     // Skia decodes in ~70 ms where Uno's BitmapImage takes ~800 ms on the full-size photo; after
-    // resizing with Skia the tiny thumbnail decodes in BitmapImage almost instantly, off the UI thread.
-    private static async Task<BitmapImage?> DecodeThumbnailAsync(string path)
+    // resizing with Skia the tiny thumbnail decodes in BitmapImage almost instantly on the UI thread.
+    private static async Task<byte[]?> DecodeThumbnailAsync(string path)
     {
         var bytes = await File.ReadAllBytesAsync(path);
-        return await Task.Run(async () =>
+        return await Task.Run(() =>
         {
             using var bitmap = SKBitmap.Decode(bytes);
             if (bitmap is null)
@@ -272,10 +280,7 @@ public sealed partial class GalleryViewModel : BaseViewModel
 
             using var image = SKImage.FromBitmap(scaled);
             using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 85);
-            using var stream = encoded.AsStream();
-            var thumbnail = new BitmapImage();
-            await thumbnail.SetSourceAsync(stream.AsRandomAccessStream());
-            return thumbnail;
+            return encoded.ToArray();
         });
     }
 
