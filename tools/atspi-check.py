@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Reads Sefirah's AT-SPI tree through libatspi, the way screen readers and computer-use tools do.
 
-usage: tools/atspi-check.py [--depth N] [--invoke NAME]
-  --invoke NAME   run DoAction(0) on the first node named NAME, then print the tree again
+usage: tools/atspi-check.py [--depth N] [--invoke NAME] [--listen SECONDS]
+  --invoke NAME       run DoAction(0) on the first node named NAME, then print the tree again
+  --listen SECONDS    register for object/focus events and print what Sefirah emits
 """
 import argparse
 import sys
@@ -12,7 +13,7 @@ import warnings
 import gi
 
 gi.require_version("Atspi", "2.0")
-from gi.repository import Atspi  # noqa: E402
+from gi.repository import Atspi, GLib  # noqa: E402
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # get_action_name has no non-deprecated twin in PyGObject
 
@@ -64,11 +65,57 @@ def tree(app, max_depth):
     return out
 
 
+def listen(seconds):
+    """Print object and focus events for SECONDS, the way a screen reader receives them."""
+    events = []
+
+    def on_event(*args):
+        event = args[0]
+        source = event.source if event.source else None
+        try:
+            name = source.get_name() if source else "?"
+        except Exception:
+            name = "?"
+        try:
+            app = source.get_application().get_name() if source else "?"
+        except Exception:
+            app = "?"
+        data = event.any_data
+        if isinstance(data, Atspi.Accessible):
+            try:
+                data = data.get_name() or repr(data)
+            except Exception:
+                data = repr(data)
+        elif data is not None:
+            data = repr(data)
+        line = (f"{event.type} app={app} name={name!r} detail1={event.detail1} "
+                f"detail2={event.detail2} any_data={data}")
+        events.append(line)
+        print(line, flush=True)
+
+    listener = Atspi.EventListener.new(on_event)
+    for event_type in ("object:state-changed", "object:property-change",
+                       "object:children-changed", "focus:"):
+        if not listener.register(event_type):
+            print(f"failed to register {event_type}", file=sys.stderr)
+
+    print(f"listening {seconds}s for object/focus events...", flush=True)
+    loop = GLib.MainLoop()
+    GLib.timeout_add_seconds(seconds, loop.quit)
+    loop.run()
+    print(f"received {len(events)} events")
+    return 0 if events else 1
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--depth", type=int, default=12)
     parser.add_argument("--invoke")
+    parser.add_argument("--listen", type=int, metavar="SECONDS")
     args = parser.parse_args()
+
+    if args.listen is not None:
+        return listen(args.listen)
 
     app = find_app("Sefirah")
     if app is None:

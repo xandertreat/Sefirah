@@ -29,6 +29,13 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     private AtspiNode? Node => server.Tree.Get(id) is { } node && node.Peer is not null ? node : null;
 
+    /// <summary>
+    /// Handlers outlive their node briefly (retention), so calls to a node that left the tree
+    /// must fail with a D-Bus error instead of answering with empty defaults.
+    /// </summary>
+    private AtspiNode RequireNode()
+        => Node ?? throw new DBusErrorReplyException("org.freedesktop.DBus.Error.UnknownObject", $"Unknown object path {PathFor(id)}");
+
     private AutomationPeer? Peer => Node?.Peer;
 
     private bool HasAction => Node?.CanInvoke ?? false;
@@ -46,23 +53,23 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     #region Accessible
 
-    public string Name => Node?.Name ?? string.Empty;
+    public string Name => RequireNode().Name;
 
-    public string Description => Node?.Description ?? string.Empty;
+    public string Description => RequireNode().Description;
 
     public (string, ObjectPath) Parent
     {
         get
         {
-            var node = Node;
-            if (node?.Parent is { } parent)
+            var node = RequireNode();
+            if (node.Parent is { } parent)
                 return server.Ref(parent.Id);
 
             return server.ApplicationRef;
         }
     }
 
-    public int ChildCount => Node?.Children.Count ?? 0;
+    public int ChildCount => RequireNode().Children.Count;
 
     public string Locale => string.Empty;
 
@@ -78,8 +85,8 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     public ValueTask<(string, ObjectPath)> GetChildAtIndexAsync(int index)
     {
-        var children = Node?.Children;
-        if (children is null || index < 0 || index >= children.Count)
+        var children = RequireNode().Children;
+        if (index < 0 || index >= children.Count)
             return ValueTask.FromResult(server.Ref(AtspiServer.ApplicationPath));
 
         return ValueTask.FromResult(server.Ref(children[index].Id));
@@ -87,42 +94,38 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     public ValueTask<(string, ObjectPath)[]> GetChildrenAsync()
     {
-        var children = Node?.Children;
-        if (children is null)
-            return ValueTask.FromResult(Array.Empty<(string, ObjectPath)>());
-
+        var children = RequireNode().Children;
         var result = children.Select(child => server.Ref(child.Id)).ToArray();
         return ValueTask.FromResult(result);
     }
 
     public ValueTask<int> GetIndexInParentAsync()
     {
-        var node = Node;
-        var siblings = node?.Parent?.Children;
-        if (node is null || siblings is null)
+        var node = RequireNode();
+        var siblings = node.Parent?.Children;
+        if (siblings is null)
             return ValueTask.FromResult(-1);
 
         return ValueTask.FromResult(siblings.FindIndex(sibling => sibling.Id == node.Id));
     }
 
-    public ValueTask<uint> GetRoleAsync() => ValueTask.FromResult(Node?.Role ?? AtspiSemantics.RolePanel);
+    public ValueTask<uint> GetRoleAsync() => ValueTask.FromResult(RequireNode().Role);
 
     public ValueTask<string> GetRoleNameAsync()
-        => ValueTask.FromResult(AtspiSemantics.RoleName(Node?.Role ?? AtspiSemantics.RolePanel));
+        => ValueTask.FromResult(AtspiSemantics.RoleName(RequireNode().Role));
 
     public ValueTask<string> GetLocalizedRoleNameAsync() => GetRoleNameAsync();
 
     public ValueTask<uint[]> GetStateAsync()
-        => ValueTask.FromResult(Node?.States ?? AtspiSemantics.Pack(AtspiSemantics.StateDefunct));
+        => ValueTask.FromResult(RequireNode().States);
 
     public ValueTask<Dictionary<string, string>> GetAttributesAsync()
     {
-        var attributes = new Dictionary<string, string>();
-        if (Node is { } node)
+        var attributes = new Dictionary<string, string>
         {
-            attributes["toolkit"] = "uno";
-            attributes["class"] = node.ClassName;
-        }
+            ["toolkit"] = "uno",
+            ["class"] = RequireNode().ClassName,
+        };
 
         return ValueTask.FromResult(attributes);
     }
@@ -154,9 +157,7 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     public ValueTask<(string, ObjectPath)> GetAccessibleAtPointAsync(int x, int y, uint coordType)
     {
-        var node = Node;
-        if (node is null)
-            return ValueTask.FromResult(server.ApplicationRef);
+        var node = RequireNode();
 
         foreach (var child in node.Children)
         {
@@ -191,10 +192,7 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     private (int X, int Y, int Width, int Height) Extents()
     {
-        if (Node is not { } node)
-            return (0, 0, 0, 0);
-
-        var (x, y, width, height) = node.Bounds;
+        var (x, y, width, height) = RequireNode().Bounds;
         return ((int)x, (int)y, (int)width, (int)height);
     }
 
@@ -238,7 +236,7 @@ internal sealed class AtspiNodeHandler : DBusHandler,
 
     #region Text
 
-    public string Text => Node?.Text ?? string.Empty;
+    public string Text => RequireNode().Text;
 
     public int CharacterCount => Text.Length;
 

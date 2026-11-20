@@ -50,7 +50,7 @@ internal static class AtspiSemantics
     private const int StateExpandable = 9;
     private const int StateExpanded = 10;
     private const int StateFocusable = 11;
-    private const int StateFocused = 12;
+    public const int StateFocused = 12;
     private const int StateMultiSelectable = 18;
     private const int StateOpaque = 19;
     private const int StatePressed = 20;
@@ -154,6 +154,15 @@ internal static class AtspiSemantics
     };
 
     public static uint[] ApplicationStates() => Pack(StateEnabled, StateSensitive, StateShowing, StateVisible);
+
+    /// <summary>States whose changes are announced with object:state-changed, by AT-SPI name.</summary>
+    public static readonly (int Bit, string Name)[] EventStates =
+    [
+        (StateFocused, "focused"), (StateSelected, "selected"), (StateChecked, "checked"),
+        (StateEnabled, "enabled"), (StateSensitive, "sensitive"), (StateShowing, "showing"),
+    ];
+
+    public static bool Has(uint[] states, int bit) => (states[bit / 32] & (1u << (bit % 32))) != 0;
 
     public static uint[] Pack(params int[] bits)
     {
