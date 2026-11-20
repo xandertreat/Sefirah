@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Sefirah.Utils;
 
 public static class ContactHelper
@@ -9,8 +11,6 @@ public static class ContactHelper
         "#DE7B52", "#C9994B", "#8FA85B", "#54AE7A",
         "#45A98C", "#4B9EBD", "#6B8FB8", "#7F8AA8"
     ];
-
-    private static readonly char[] InitialSeparator = [' ', '\t', '\n', '\r'];
 
     public static string GetPlaceholderColorHex(string key)
     {
@@ -31,17 +31,7 @@ public static class ContactHelper
             return string.Empty;
         }
 
-        var words = displayName.Trim().Split(InitialSeparator, StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        if (words.Length == 1)
-        {
-            return words[0][..1].ToUpperInvariant();
-        }
-
-        return string.Concat(words[0].AsSpan(0, 1), words[1].AsSpan(0, 1)).ToUpperInvariant();
+        // One text element, so a leading emoji or accented letter stays whole.
+        return StringInfo.GetNextTextElement(displayName.Trim()).ToUpperInvariant();
     }
 }
